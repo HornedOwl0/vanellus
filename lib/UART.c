@@ -1,7 +1,23 @@
 #include <avr/io.h>
+#include <avr/interrupt.h>
 #define BAUD
 #include "UART.h"
 #undef BAUD
+
+static volatile struct {
+	char raw[RX_BUF_SIZE];
+	uint8_t r_pos;
+	uint8_t w_pos;
+} buf={ .raw={0}, .r_pos=0, .w_pos=0 };
+
+ISR(USART_RX_vect){
+	if ( (buf.w_pos+1)!=buf.r_pos ){
+		buf.raw[ buf.w_pos++ ] = UDR0;
+		buf.w_pos%=RX_BUF_SIZE;
+	} else {
+		(void)UDR0;
+	}
+} 
 
 void UART_puts(const char *str){
 	while (*str){
@@ -68,10 +84,15 @@ void UART_putu(uint32_t num){
 	return;
 }
 
-char UART_getc(void){
-	if (!(UCSR0A & (1<<RXC0))){
-		return UDR0;
-	}
-	return 0;
+int8_t UART_bufchk(void){
+	return !!( buf.r_pos != buf.w_pos ); 
 }
+
+char UART_getc(void){
+	char hold = buf.raw[ (buf.r_pos++) ];
+	buf.r_pos %= RX_BUF_SIZE;
+	return hold;
+}
+
+
 

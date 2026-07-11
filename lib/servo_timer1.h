@@ -1,35 +1,38 @@
 #ifndef SERVO_TIMER1_H
 #define SERVO_TIMER1_H
 
-	#include <stdint.h>
-	#include <avr/io.h>
-	#include <util/atomic.h>
+#include <stdint.h>
+#include <avr/io.h>
+#include <util/atomic.h>
+
+#ifndef F_CPU
+	#error "F_CPU is undefined for servo_timer1"
+#endif /* F_CPU */
 	
-	#ifdef F_CPU
-	 
-		#if !( defined(TCCR1A_MSK) || defined (TCCR1B_MSK) || defined(SERVO_PRESCALER) || defined(ICR1_VAL) )
-			#if ( F_CPU == 16000000UL )
-				#define TCCR1A_MSK (1<<COM1A1)|(1<<COM1B1) // Non-Inverted Mode
-				#define TCCR1B_MSK (1<<WGM13) // Phase and Frequency Correct ICR1 - Mode 8
-				#define ICR1_VAL 20000U
-				#define SERVO_PRESCALER 0x2 // F_CPU/8
-			#elif ( F_CPU == 8000000UL )
-				#define TCCR1A_MSK (1<<COM1A1)|(1<<COM1B1)|(1<<WGM11) // Non-Inverted Mode
-				#define TCCR1B_MSK (1<<WGM13)|(1<<WGM12) // Fast PWM ICR1 - Mode 14
-				#define ICR1_VAL 19999U
-				#define SERVO_PRESCALER 0x2 // F_CPU/8
-			#else // Presume F_CPU=1MHz
-				#define TCCR1A_MSK (1<<COM1A1)|(1<<COM1B1)|(1<<WGM11) // Non-Inverted Mode
-				#define TCCR1B_MSK (1<<WGM13)|(1<<WGM12)// Fast PWM ICR1 - Mode 14
-				#define ICR1_VAL 19999U
-				#define SERVO_PRESCALER 0x1 // F_CPU/1
-			#endif /* Freq 16 MHz */
-		#endif /* Masks Defined */
+#ifdef F_CPU
+	#if !( defined(TCCR1A_MSK) || defined (TCCR1B_MSK) || defined(SERVO_PRESCALER) || defined(ICR1_VAL) )
+		#if ( F_CPU == 16000000UL )
+			#define TCCR1A_MSK (1<<COM1A1)|(1<<COM1B1) // Non-Inverted Mode
+			#define TCCR1B_MSK (1<<WGM13) // Phase and Frequency Correct ICR1 - Mode 8
+			#define ICR1_VAL 20000U
+			#define SERVO_PRESCALER 0x2 // F_CPU/8
+		#elif ( F_CPU == 8000000UL )
+			#define TCCR1A_MSK (1<<COM1A1)|(1<<COM1B1)|(1<<WGM11) // Non-Inverted Mode
+			#define TCCR1B_MSK (1<<WGM13)|(1<<WGM12) // Fast PWM ICR1 - Mode 14
+			#define ICR1_VAL 19999U
+			#define SERVO_PRESCALER 0x2 // F_CPU/8
+		#else // Presume F_CPU=1MHz
+			#define TCCR1A_MSK (1<<COM1A1)|(1<<COM1B1)|(1<<WGM11) // Non-Inverted Mode
+			#define TCCR1B_MSK (1<<WGM13)|(1<<WGM12)// Fast PWM ICR1 - Mode 14
+			#define ICR1_VAL 19999U
+			#define SERVO_PRESCALER 0x1 // F_CPU/1
+		#endif /* Freq 16 MHz */
+	#endif /* Masks Defined */
 		
 	#ifndef SERVO_MIN_US
 		#define SERVO_MIN_US 1000U
 	#endif
-	
+		
 	#ifndef SERVO_MAX_US
 		#define SERVO_MAX_US 2000U
 	#endif
@@ -69,9 +72,6 @@
 		}
 		return;
 	}
-	
-	#else
-		#error "F_CPU is undefined for servo_timer1"
-	#endif /* F_CPU */
+#endif /* F_CPU */
 
 #endif /* SERVO_TIMER1_H */

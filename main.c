@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 #include <avr/io.h>
+#include <avr/interrupt.h>
 
 #include "lib/utils.h"
 #include "lib/scheduler.h"
@@ -12,7 +13,6 @@
 #include "lib/UART.h"
 #include <stdlib.h>
 #include <stdio.h>
-
 
 #define SERVO_MIN_US 1000U
 #define SERVO_MAX_US 2000U
@@ -24,8 +24,8 @@ void UART_task(void);
 
 static struct scheduler_task tasks[] = {
 	{&blink, 0, 200},
-	{&servo_task, 0, 1000},
-	{&UART_task, 0, 100},
+	{&servo_task, 500, 1000},
+	{&UART_task, 1000, 1000},
 };
 
 int main(void){
@@ -62,6 +62,7 @@ void servo_task(void){
 }
 
 void UART_task(void){
-	static uint8_t counter;
-	UART_putu(counter++);
+	while ( UART_bufchk() ){
+		UART_putc(UART_getc());
+	}
 }
