@@ -19,11 +19,11 @@
 		return;
 	}
 	
-	void UART_puts(char *str);
+	void UART_puts(const char *str);
 	
-	void UART_putn(char *str, int n);
+	void UART_putn(const char *str, int n);
 	
-	void UART_putc(char str);
+	void UART_putc(const char str);
 
 	void UART_puti(uint32_t num);
 	

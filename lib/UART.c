@@ -3,7 +3,7 @@
 #include "UART.h"
 #undef BAUD
 
-void UART_puts(char *str){
+void UART_puts(const char *str){
 	while (*str){
 		UDR0=*(str++);
 		UDR0_AWAIT_CLR();
@@ -13,7 +13,7 @@ void UART_puts(char *str){
 	return;
 }
 
-void UART_putn(char *str, int n){
+void UART_putn(const char *str, int n){
 	while (*str && n--){
 		UDR0=*(str++);
 		UDR0_AWAIT_CLR();
@@ -21,7 +21,7 @@ void UART_putn(char *str, int n){
 	return;
 }
 
-void UART_putc(char str){
+void UART_putc(const char str){
 	UDR0=str;
 	UDR0_AWAIT_CLR();
 	return;
