@@ -1,5 +1,6 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
+#include <stdint.h>
 #define BAUD
 #include "UART.h"
 #undef BAUD
@@ -29,7 +30,7 @@ void UART_puts(const char *str){
 	return;
 }
 
-void UART_putn(const char *str, int n){
+void UART_putn(const char *str, uint8_t n){
 	while (*str && n--){
 		UDR0=*(str++);
 		UDR0_AWAIT_CLR();

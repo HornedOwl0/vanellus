@@ -2,6 +2,7 @@
 #define UART_H
 
 #include <avr/io.h>
+#include <stdint.h>
 
 #ifndef RX_BUF_SIZE 
 	#define RX_BUF_SIZE ( 32U )
@@ -25,7 +26,7 @@
 	
 	void UART_puts(const char *str);
 	
-	void UART_putn(const char *str, int n);
+	void UART_putn(const char *str, uint8_t n);
 	
 	void UART_putc(const char str);
 
