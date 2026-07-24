@@ -1,7 +1,6 @@
 #ifndef SCHEDULER_H
 #define SCHEDULER_H
 
-#include <avr/interrupt.h>
 #include <util/atomic.h>
 #include <stdint.h>
 #include <avr/io.h>
@@ -26,13 +25,9 @@
 	#error "F_CPU is undefined for scheduler"
 #endif
 
-struct scheduler_task {
-	void (*run)(void);
-	uint16_t last_ms;
-	const uint16_t interval_ms;
-};
+extern volatile uint16_t __tick_ms_ctu;
 
-static inline void scheduler_init(void){
+static inline void timer0_init(void){
 	/* Disable global interrupts - Enter Atomic Section */
 	ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
 		/* Reset registers */
@@ -53,6 +48,10 @@ static inline void scheduler_init(void){
 	return;
 }
 
-uint16_t atomic_get_ms(void);
+static inline void atomic_get_ms(uint16_t *buf){
+	ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
+		 *buf = __tick_ms_ctu;
+	}
+}
 
 #endif /* SCHEDULER_H */

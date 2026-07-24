@@ -62,7 +62,6 @@ void UART_puti(uint32_t num){
 	do{
 		UART_putc(buf[idx]);
 	} while ( (idx--)>0 );
-	UART_putc('\n');
 	
 	return;
 }
@@ -79,7 +78,6 @@ void UART_putu(uint32_t num){
 	do{
 		UART_putc(buf[idx]);
 	} while ( (idx--)>0 );
-	UART_putc('\n');
 	
 	return;
 }
@@ -93,6 +91,3 @@ char UART_getc(void){
 	buf.r_pos %= RX_BUF_SIZE;
 	return hold;
 }
-
-
-
