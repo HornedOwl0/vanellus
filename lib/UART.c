@@ -12,9 +12,9 @@ static volatile struct {
 } buf={ .raw={0}, .r_pos=0, .w_pos=0 };
 
 ISR(USART_RX_vect){
-	if ( (buf.w_pos+1)!=buf.r_pos ){
-		buf.raw[ buf.w_pos++ ] = UDR0;
-		buf.w_pos%=RX_BUF_SIZE;
+	if ( ((buf.w_pos+1)%RX_BUF_SIZE)!=buf.r_pos ){ // if write head is not direcly behind read head
+		buf.raw[ buf.w_pos++ ] = UDR0; // safely (!!) write to current pos and jump write head
+		buf.w_pos%=RX_BUF_SIZE; // wraparound if necessary
 	} else {
 		(void)UDR0;
 	}

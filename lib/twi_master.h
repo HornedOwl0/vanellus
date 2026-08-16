@@ -18,13 +18,15 @@
 	#endif
 #endif
 
-#define TWI_INIT() ({ TWBR=TWI_BITRATE; TWSR&=(0xF8|TWI_PRESCALER) })
+#define TWI_INIT() ({ TWBR=TWI_BITRATE; TWSR&=(0xF8|TWI_PRESCALER); })
 // F_SCL = F_CPU/16+2(TWBR)*4^PRESCALER
 
-#define TWI_START() ({ TWCR=(1<<TWINT)|(1<<TWSTA)|(1<<TWEN); while(!(TWCR & (1<<TWINT))){} })
-#define TWI_STOP() ({ TWCR=(1<<TWINT)|(1<<TWSTO)|(1<<TWEN); while (TWCR & (1<<TWSTO)){} })
+#define TWI_CHK() ( !!(PINC & (1<<PC5)) & !!(PINC & (1<<PC4)) ) // check if connected
 
-#define TWI_WRITE(data) ({ TWDR=data;TWCR=(1<<TWINT)|(1<<TWEN); while(!(TWCR & (1<<TWINT))){} })
+#define TWI_START() ({ TWCR=(1<<TWINT)|(1<<TWSTA)|(1<<TWEN); while( !(TWCR & (1<<TWINT)) ){} })
+#define TWI_STOP() ({ TWCR=(1<<TWINT)|(1<<TWSTO)|(1<<TWEN); while ( TWCR & (1<<TWSTO) ){} })
+
+#define TWI_WRITE(data) ({ TWDR=data;TWCR=(1<<TWINT)|(1<<TWEN); while( !(TWCR & (1<<TWINT)) ){} })
 
 #define SLA_R(addr) (addr << 1 | 1)
 #define SLA_W(addr) (addr << 1 | 0)
