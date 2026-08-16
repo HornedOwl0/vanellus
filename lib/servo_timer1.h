@@ -39,8 +39,9 @@
 	
 	#define SERVO_RANGE (SERVO_MAX_US - SERVO_MIN_US)
 	
-	#define SERVO_B1 OCR1A
-	#define SERVO_B2 OCR1B
+	#define SERVO_B5 OCR1A
+	#define SERVO_B6 OCR1B
+  #define SERVO_B7 OCR1C
 	
 	static inline int16_t servo_mil(const int32_t angle){
 		return (int16_t)( (angle<0?SERVO_MAX_US:SERVO_MIN_US) + ( ( (angle)*SERVO_RANGE )/3140 ));
@@ -65,10 +66,11 @@
 			
 			OCR1A = 1000;
 			OCR1B = 1000;
+      OCR1C = 1000;
 			
 			TCCR1B |= (SERVO_PRESCALER<<CS10);
 			
-			DDRB |= (1<<PB1)|(1<<PB2);
+			DDRB |= (1<<PB5)|(1<<PB6)|(1<<PB7);
 		}
 		return;
 	}

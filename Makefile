@@ -1,8 +1,8 @@
-MMCU = atmega328p
+MMCU = atmega32u4
 FREQ = 16000000UL # in hertz (Hz)
 CFLAGS = -std=gnu23 -mmcu=$(MMCU) -Wall -Oz -DF_CPU=$(FREQ)
 CC = avr-gcc
-DEPS = lib/scheduler.h lib/UART.h lib/servo_timer1.h lib/utils.h
+DEPS = lib/%.h
 OBJ = obj/scheduler.o obj/UART.o 
 
 .PHONY: clean all

@@ -14,13 +14,13 @@
 
 #ifdef BAUD
 	#define UBRRX ( F_CPU/16/BAUD-1 )
-	#define UDR0_AWAIT_CLR() while ( !(UCSR0A & (1<<UDRE0)) )
+	#define UDR1_AWAIT_CLR() while ( !(UCSR1A & (1<<UDRE1)) )
 	
 	static inline void UART_init(void){
-	 	UBRR0H = (uint8_t)(UBRRX>>8); 
-		UBRR0L = (uint8_t)(UBRRX);
-		UCSR0B = (1<<RXCIE0)|(1<<RXEN0)|(1<<TXEN0)|(0<<UCSZ02);
-		UCSR0C = (0<<USBS0)|(1<<UCSZ01)|(1<<UCSZ00);
+	 	UBRR1H = (uint8_t)(UBRRX>>8); 
+		UBRR1L = (uint8_t)(UBRRX);
+		UCSR1B = (1<<RXCIE1)|(1<<RXEN1)|(1<<TXEN1)|(0<<UCSZ12);
+		UCSR1C = (0<<USBS1)|(1<<UCSZ11)|(1<<UCSZ10);
 		return;
 	}
 	

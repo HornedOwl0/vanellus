@@ -11,36 +11,36 @@ static volatile struct {
 	uint8_t w_pos;
 } buf={ .raw={0}, .r_pos=0, .w_pos=0 };
 
-ISR(USART_RX_vect){
-	if ( (buf.w_pos+1)!=buf.r_pos ){
-		buf.raw[ buf.w_pos++ ] = UDR0;
+ISR(USART1_RX_vect){
+	if ( ((buf.w_pos+1)%RX_BUF_SIZE)!=buf.r_pos ){
+		buf.raw[ buf.w_pos++ ] = UDR1;
 		buf.w_pos%=RX_BUF_SIZE;
 	} else {
-		(void)UDR0;
+		(void)UDR1;
 	}
 } 
 
 void UART_puts(const char *str){
 	while (*str){
-		UDR0=*(str++);
-		UDR0_AWAIT_CLR();
+		UDR1=*(str++);
+		UDR1_AWAIT_CLR();
 	}
-	UDR0='\n';
-	UDR0_AWAIT_CLR();
+	UDR1='\n';
+	UDR1_AWAIT_CLR();
 	return;
 }
 
 void UART_putn(const char *str, uint8_t n){
 	while (*str && n--){
-		UDR0=*(str++);
-		UDR0_AWAIT_CLR();
+		UDR1=*(str++);
+		UDR1_AWAIT_CLR();
 	}
 	return;
 }
 
 void UART_putc(const char str){
-	UDR0=str;
-	UDR0_AWAIT_CLR();
+	UDR1=str;
+	UDR1_AWAIT_CLR();
 	return;
 }
 

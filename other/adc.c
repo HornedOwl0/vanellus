@@ -18,12 +18,7 @@
 void adcloop(void){
 	static int16_t voltage;
 	ADCSRA |= (1<<ADSC);
-	while( READ(ADCSRA, ADSC) ){}
-	voltage = ((int32_t)ADC*5000)/1024;		
-	
-	UART_putu(voltage);
-	
-	_delay_ms(100);
+	while( !!(ADCSRA & ADSC) ){}
 }
 
 void blink(void){
@@ -42,7 +37,8 @@ int main(){
 	ADCSRB = 0x00;
 	
 	ADMUX = (0<<REFS1)|(1<<REFS0)|(0<<ADLAR);
-	ADMUX = ( ADMUX & 0xF0 )|(0x00); /* Clear MUX bits, ADC on C0 */
+	ADMUX = ( ADMUX & 0xE0 )|(0x00); /* Clear MUX bits, ADC on C0 */
+
 	
 	CLR(DDRC, PC0);
 	
