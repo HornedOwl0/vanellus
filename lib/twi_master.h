@@ -21,7 +21,7 @@
 #define TWI_INIT() ({ TWBR=TWI_BITRATE; TWSR&=(0xF8|TWI_PRESCALER); })
 // F_SCL = F_CPU/16+2(TWBR)*4^PRESCALER
 
-#define TWI_CHK() ( !!(PINC & (1<<PD1)) & !!(PINC & (1<<PD0)) ) // check if connected
+#define TWI_CHK() ( !!(PIND & (1<<PD1)) & !!(PIND & (1<<PD0)) ) // check if connected
 
 #define TWI_START() ({ TWCR=(1<<TWINT)|(1<<TWSTA)|(1<<TWEN); while( !(TWCR & (1<<TWINT)) ){} })
 #define TWI_STOP() ({ TWCR=(1<<TWINT)|(1<<TWSTO)|(1<<TWEN); while ( TWCR & (1<<TWSTO) ){} })

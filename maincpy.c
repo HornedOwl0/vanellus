@@ -18,9 +18,6 @@
 #define SERVO_MAX_US 2400U
 #include "lib/servo_timer1.h"
 
-#define TWI_BITRATE 12
-#define TWI_PRESCALER 0
-
 #include "lib/twi_master.h"
 #include <util/delay.h>
 
@@ -63,33 +60,31 @@ int main(void){
 	
   SET(DDRD, PD5);
 	SET(DDRB, PB0);
-  SET(PORTB, PB5);
+  CLR(PORTD, PD5);
 
-  _delay_ms(500);
+  _delay_ms(1000);
 	
   if ( TWI_CHK() ){
 	  TWI_INIT();
-
-    ssd1306_cmd(0xAE); // display off
-
+	  ssd1306_cmd(0xAE); // display off
+  	ssd1306_cmd(0xA6); // set non-inverted
     ssd1306_cmd(0xA8); ssd1306_cmd(0x3F); // 64 height (63+1) multiplex
   	ssd1306_cmd(0xC8); // reverse COM scam (top-to-bottom)
 	  ssd1306_cmd(0x20); ssd1306_cmd(0x00); // 0x00 horizontal adressing
-
     ssd1306_cmd(0x8D); ssd1306_cmd(0x14); // charge pump enable during display on
-
 	  ssd1306_cmd(0xAF); // display on
-	  
-    for(uint16_t i=0; i<1024; i++){
-		  ssd1306_data(0x00);
-		}
-    _delay_ms(1000);
+                       //
+    ssd1306_cmd(0xA5);
+    delay(1000)
+    ssd1306_cmd(0xA4);
+	
+	  // ssd1306_cmd(0x22); ssd1306_cmd(0x00); ssd1306_cmd(0x07);
+	
 	  for(uint16_t i=0; i<1024; i++){
-		  ssd1306_data(0xFF);  
+		  ssd1306_data(0xFF);
+	  	_delay_ms(5);
 		}
-	} else {
-    CLR(PORTB, PB5);
-  }
+	}
 
 	ADCSRA = (1<<ADEN)|(0x07<<ADPS0);
 	ADCSRB = 0x00;
@@ -118,7 +113,7 @@ int main(void){
 }
 
 void blink(void){
-	SET(PIND, PD5);
+	SET(PINB, PB0);
   return;
 }
 

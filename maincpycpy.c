@@ -18,9 +18,6 @@
 #define SERVO_MAX_US 2400U
 #include "lib/servo_timer1.h"
 
-#define TWI_BITRATE 12
-#define TWI_PRESCALER 0
-
 #include "lib/twi_master.h"
 #include <util/delay.h>
 
@@ -29,14 +26,6 @@ void ssd1306_cmd(uint8_t cmd){
 	TWI_WRITE(SLA_W(60));
 	TWI_WRITE(0x00);
 	TWI_WRITE(cmd);
-	TWI_STOP();
-}
-
-void ssd1306_data(uint8_t data){
-	TWI_START();
-	TWI_WRITE(SLA_W(60));
-	TWI_WRITE(0x40);
-	TWI_WRITE(data);
 	TWI_STOP();
 }
 
@@ -63,33 +52,57 @@ int main(void){
 	
   SET(DDRD, PD5);
 	SET(DDRB, PB0);
-  SET(PORTB, PB5);
+  CLR(PORTD, PD5);
 
-  _delay_ms(500);
+  _delay_ms(100);
 	
-  if ( TWI_CHK() ){
-	  TWI_INIT();
+  if(TWI_CHK()){}
+	TWI_INIT();
 
-    ssd1306_cmd(0xAE); // display off
+  /*
 
-    ssd1306_cmd(0xA8); ssd1306_cmd(0x3F); // 64 height (63+1) multiplex
-  	ssd1306_cmd(0xC8); // reverse COM scam (top-to-bottom)
-	  ssd1306_cmd(0x20); ssd1306_cmd(0x00); // 0x00 horizontal adressing
+  ssd1306_cmd(0xD5); // Set Display Clock Divide Ratio / Oscillator Frequency
+  ssd1306_cmd(0x80); // Default ratio
+  */
+  /*
+  ssd1306_cmd(0xA8); // Set Multiplex Ratio
+  ssd1306_cmd(0x3F); // 64 duty (128x64 pixels)
+  */
+  
+  /*
+  ssd1306_cmd(0xD3); // Set Display Offset
+  ssd1306_cmd(0x00); // No offset
+  
+  ssd1306_cmd(0x40); // Set Start Line (Line 0)
+  */
+  ssd1306_cmd(0x8D); // Charge Pump Setting
+  ssd1306_cmd(0x14); // Enable charge pump during display on
+  /*
+  ssd1306_cmd(0x20); // Memory Addressing Mode
+  ssd1306_cmd(0x00); // 0x00 for Horizontal Addressing Mode
+  
+  ssd1306_cmd(0xA1); // Set Segment Re-map (Column 127 mapped to SEG0)
+  ssd1306_cmd(0xC8); // Set COM Output Scan Direction (Reversed direction)
+  
+  ssd1306_cmd(0xDA); // Set COM Pins Hardware Configuration
+  ssd1306_cmd(0x12); 
+  
+  ssd1306_cmd(0x81); // Set Contrast Control
+  ssd1306_cmd(0xCF); // Higher contrast
+  
+  ssd1306_cmd(0xD9); // Set Pre-charge Period
+  ssd1306_cmd(0xF1); 
+  
+  ssd1306_cmd(0xDB); // Set VCOMH Deselect Level
+  ssd1306_cmd(0x40); 
+  
+  ssd1306_cmd(0xA4); // Entire Display ON (Resume to RAM content display: 0xA4)
+  ssd1306_cmd(0xA6); // Set Normal Display (0xA6 = non-inverted)
+	*/
+	ssd1306_cmd(0xAE); // Display OFF (sleep mode)
+  ssd1306_cmd(0xAF); // Display ON
+	ssd1306_cmd(0xA5);
 
-    ssd1306_cmd(0x8D); ssd1306_cmd(0x14); // charge pump enable during display on
-
-	  ssd1306_cmd(0xAF); // display on
-	  
-    for(uint16_t i=0; i<1024; i++){
-		  ssd1306_data(0x00);
-		}
-    _delay_ms(1000);
-	  for(uint16_t i=0; i<1024; i++){
-		  ssd1306_data(0xFF);  
-		}
-	} else {
-    CLR(PORTB, PB5);
-  }
 
 	ADCSRA = (1<<ADEN)|(0x07<<ADPS0);
 	ADCSRB = 0x00;
@@ -118,12 +131,12 @@ int main(void){
 }
 
 void blink(void){
-	SET(PIND, PD5);
+	SET(PINB, PB0);
   return;
 }
 
 void servo_task(void){
-  OCR1B = (SERVO_MIN_US-64) + A0_val ;
+  OCR1B = (416) + A0_val ;
   return;
 }
 
