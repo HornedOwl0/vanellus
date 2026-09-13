@@ -58,7 +58,7 @@ void UART_puti(uint32_t num){
 	/* read it backwards - run up the index*/
 	do { 
 		buf[idx] = (char)( ( num%10 ) + '0' );
-	} while( !!(num/=10) && (++idx)<16); 
+	} while( !!(num/=10) && (++idx)<10); 
 	/* print it forwards - run back the index*/
 	do{
 		UART_putc(buf[idx]);
@@ -74,7 +74,7 @@ void UART_putu(uint32_t num){
 	/* read it backwards - run up the index*/
 	do { 
 		buf[idx] = (char)( ( num%10 ) + '0' );
-	} while( !!(num/=10) && (++idx)<16); 
+	} while( !!(num/=10) && (++idx)<10); 
 	/* print it forwards - run back the index*/
 	do{
 		UART_putc(buf[idx]);
