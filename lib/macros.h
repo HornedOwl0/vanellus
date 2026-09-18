@@ -4,6 +4,7 @@
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 
 #define ABS(n) ( n<0 ? (uint32_t)(-n) : (uint32_t)(n) )
+#define CONSTRAIN(n, x, y) ( n<x ? x : ( n>y ? y : n ) )
 
 #define REVERSE(b) \
 ( (b&0x01) << 7 | (b&0x80) >> 7 | \
@@ -14,6 +15,9 @@
 #define SET(REG, POS) (REG |= _BV(POS))
 #define CLR(REG, POS) (REG &= ~_BV(POS))
 #define TOG(REG, POS) (REG ^= _BV(POS))
+
+#define SETV(REG, VAL) (REG |= VAL)
+#define CLRV(REG, VAL) (REG &= ~VAL)
 
 #define READ(REG, POS) ( !!(REG & _BV(POS)) )
 
