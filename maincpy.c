@@ -50,6 +50,53 @@ int main(void){
 	
 	_delay_ms(100);
 	
+	if ( TWI_CHK() ){
+	
+	TWI_INIT();
+	
+	ssd1306_cmd(0xAE); // Display OFF (sleep mode)
+
+  ssd1306_cmd(0xD5); // Set Display Clock Divide Ratio / Oscillator Frequency
+  ssd1306_cmd(0x80); // Default ratio
+  
+  ssd1306_cmd(0xA8); // Set Multiplex Ratio
+  ssd1306_cmd(0x3F); // 64 duty (128x64 pixels)
+  
+  ssd1306_cmd(0xD3); // Set Display Offset
+  ssd1306_cmd(0x00); // No offset
+  
+  ssd1306_cmd(0x40); // Set Start Line (Line 0)
+  
+  ssd1306_cmd(0x8D); // Charge Pump Setting
+  ssd1306_cmd(0x14); // Enable charge pump during display on
+  
+  ssd1306_cmd(0x20); // Memory Addressing Mode
+  ssd1306_cmd(0x00); // 0x00 for Horizontal Addressing Mode
+  
+  ssd1306_cmd(0xA1); // Set Segment Re-map (Column 127 mapped to SEG0)
+  ssd1306_cmd(0xC8); // Set COM Output Scan Direction (Reversed direction)
+  
+  ssd1306_cmd(0xDA); // Set COM Pins Hardware Configuration
+  ssd1306_cmd(0x12); 
+  
+  ssd1306_cmd(0x81); // Set Contrast Control
+  ssd1306_cmd(0xCF); // Higher contrast
+  
+  ssd1306_cmd(0xD9); // Set Pre-charge Period
+  ssd1306_cmd(0xF1); 
+  
+  ssd1306_cmd(0xDB); // Set VCOMH Deselect Level
+  ssd1306_cmd(0x40); 
+  
+  ssd1306_cmd(0xA4); // Entire Display ON (Resume to RAM content display: 0xA4)
+  ssd1306_cmd(0xA6); // Set Normal Display (0xA6 = non-inverted)
+
+  ssd1306_cmd(0xAF); // Display ON
+
+	ssd1306_cmd(0xA5);
+	
+	}
+	
 	SET(DDRB, PB0);
 	
 	timer0_init(); /* ALWAYS the last step in setup */
