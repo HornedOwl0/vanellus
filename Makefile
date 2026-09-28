@@ -5,7 +5,7 @@ CC = avr-gcc
 DEPS = lib/%.h
 OBJ = obj/scheduler.o obj/UART.o 
 
-.PHONY: clean all
+.PHONY: clean all flash
 
 obj/%.o: ./lib/%.c $(DEPS)
 	$(CC) $(CFLAGS) -o $@ -c $<
@@ -21,6 +21,9 @@ main.hex: main.elf
 
 all: main.hex
 	avr-size -G main.elf
+
+flash: all
+	avrdude -p m32u4 -c avr109 -P /dev/ttyACM0 -U flash:w:main.hex:i
 
 clean: $(OBJ)
 	rm $^

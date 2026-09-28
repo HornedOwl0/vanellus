@@ -2,136 +2,164 @@
 	#define F_CPU 16000000UL
 #endif
 
+#include "lib/macros.h"
 #include <stdint.h>
+
 #include <avr/io.h>
 #include <avr/interrupt.h>
 
-#include "lib/macros.h"
-#include "lib/scheduler.h"
-
-#define BAUD 57600U
-#include "lib/UART.h"
-#include <stdlib.h>
-#include <stdio.h>
-
-#define SERVO_MIN_US 480U
-#define SERVO_MAX_US 2400U
-#include "lib/servo_timer1.h"
-
-#define TWI_BITRATE 12
-#define TWI_PRESCALER 0
-
-#include "lib/twi_master.h"
 #include <util/delay.h>
+#include <util/atomic.h>
 
-void ssd1306_cmd(uint8_t cmd){
-	TWI_START();
-	TWI_WRITE(SLA_W(60));
-	TWI_WRITE(0x00);
-	TWI_WRITE(cmd);
-	TWI_STOP();
-}
+#define USBSTDREQ_GET_STATUS 0x00
+#define USBSTDREQ_CLEAR_FEATURE 0x01
+  // RESERVED 0x02
+#define USBSTDREQ_SET_FEATURE 0x03,
+  // RESERVED 0x04
+#define USBSTDREQ_SET_ADDRESS 0x05
+#define USBSTDREQ_GET_DESCRIPTOR 0x06
+#define USBSTDREQ_SET_DESCRIPTOR 0x07
+#define USBSTDREQ_GET_CONFIGURATION 0x08
+#define USBSTDREQ_SET_CONFIGURATION 0x09
+#define USBSTDREQ_GET_INTERFACE 0x0A
+#define USBSTDREQ_SET_INTERFACE 0x0B
+#define USBSTDREQ_SYNCH_FRAME 0x0C
 
-void ssd1306_data(uint8_t data){
-	TWI_START();
-	TWI_WRITE(SLA_W(60));
-	TWI_WRITE(0x40);
-	TWI_WRITE(data);
-	TWI_STOP();
-}
+#define MSB(b) (uint8_t)((b>>8)&0xFF)
+#define LSB(b) (uint8_t)(b&0xFF)
 
-struct xtask {
-	void (*run)(void);
-	uint16_t last_ms;
-	const uint16_t interval_ms;
+static uint8_t USB_device_descriptor[] = {
+  18, // bLength
+  0x01, // bDescriptorType
+  MSB(0x0110), // bcdUSB
+  LSB(0x0110),
+  0x02,  // bDeviceClass - USB CDC Device
+  0x02,  // bDeviceSubclass - Abstract Control Model
+  0x00,  // bDeviceProtocol - None
+  MSB(0x03EB),       // idVendor
+  LSB(0x03EB),       // Atmel
+  MSB(0x6124),       // idProduct
+  LSB(0x6124),       // Atmel CDC Examples
+  MSB(0x0100),      // bcdDevice
+  LSB(0x0100),      // 1.00
+  0,                // iManufacturer
+  0,              // iProduct
+  0,              // iSerialNumber
+  1,                // bNumConfigurations
 };
 
-static int16_t A0_val = 0;
+void EP0_init(void){
+  UENUM = 0; // Endpoint 0 - Control (Bidirectional)
+               //
+  UECONX |= (1<<EPEN);
+  UECFG0X = (0x00<<EPTYPE0)|(0<<EPDIR); // OUT
+  UECFG1X = (0x03<<EPSIZE0)|(0x00<<EPBK0)|(1<<ALLOC);
 
-void blink(void);
-void servo_task(void);
-void ADC_task(void);
+  UEIENX |= (1<<RXSTPE);
+}
 
-static struct xtask tasks[] = {
-	{&blink, 0, 100},
-	{&servo_task, 35, 50},
-  {&ADC_task, 110, 50}
-};
+ISR(USB_GEN_vect){
+  if ( UDINT & (1<<EORSTI) ){
+    UDINT = (1<<EORSTI);
+
+    EP0_init();
+  }
+}
+
+ISR(USB_COM_vect){
+  UENUM = 0;
+
+  if ( UEINTX & (1<<RXSTPI) ){
+    uint8_t bmRequestType = UEDATX;
+    uint8_t bRequest = UEDATX;
+    uint16_t wValue = UEDATX | (uint16_t)(UEDATX<<8);
+    uint16_t wIndex = UEDATX | (uint16_t)(UEDATX<<8);
+    uint16_t wLength = UEDATX | (uint16_t)(UEDATX<<8);
+
+    UEINTX &= ~(1<<RXSTPI);
+
+    if (bRequest == USBSTDREQ_SET_ADDRESS){
+      (void)bmRequestType;
+      (void)wIndex;
+      (void)wLength;
+      // wValue is our Address -> Record it in UADD, keep ADDEN clr
+      UDADDR = (uint8_t)(wValue&0x7F);
+      // send a ZLP
+      while ( !(UEINTX & (1<<TXINI) ) ){}
+      UEINTX &= ~(1<<TXINI);
+      while ( !(UEINTX & (1<<TXINI) ) ){}
+      // then, ADDEN can be set
+      UDADDR |= (1<<ADDEN);
+    }
+
+    if (bRequest == USBSTDREQ_GET_DESCRIPTOR){
+      (void)bmRequestType;
+      (void)wIndex;
+      (void)wLength;
+      if ( MSB(wValue) == 0x01 ){ // Device Descriptor
+        for (int8_t i=0; i<sizeof(USB_device_descriptor); i++){
+          UEDATX = USB_device_descriptor[i];
+        } 
+      while ( !(UEINTX & (1<<TXINI) ) ){}
+      UEINTX &= ~(1<<TXINI);
+      while ( !(UEINTX & (1<<TXINI) ) ){}
+      }
+    }
+  }
+}
+
+void ACM_EPN_init(void){
+  UERST = (0x7F<<EPRST0); // Reset FIFO for all Endpoints
+  UERST = (0x00<<EPRST0); 
+
+  UENUM = 1; // Endpoint 1 - Interrupt IN
+  UECONX |= (1<<EPEN);
+  UECFG0X = (0x03<<EPTYPE0)|(1<<EPDIR); // IN
+  UECFG1X = (0x01<<EPSIZE0)|(0x00<<EPBK0)|(1<<ALLOC);
+
+  UENUM = 2; // Endpoint 2 - Bulk IN - 64B
+  UECONX |= (1<<EPEN);
+  UECFG0X = (0x02<<EPTYPE0)|(1<<EPDIR); // IN
+  UECFG1X = (0x03<<EPSIZE0)|(0x00<<EPBK0)|(1<<ALLOC);
+
+  UENUM = 3; // Endpoint 3 - Bulk OUT - 64B
+  UECONX |= (1<<EPEN);
+  UECFG0X = (0x02<<EPTYPE0)|(0<<EPDIR); // OUT
+  UECFG1X = (0x03<<EPSIZE0)|(0x00<<EPBK0)|(1<<ALLOC);
+
+}
 
 int main(void){
 	cli(); /* Begin Setup - no interrupts */
-	
+
   SET(DDRD, PD5);
 	SET(DDRB, PB0);
-  SET(PORTB, PB5);
+  SET(PORTB, PB0);
+  SET(PORTD, PD5);
 
-  _delay_ms(500);
-	
-  if ( TWI_CHK() ){
-	  TWI_INIT();
+  _delay_ms(1000);
 
-    ssd1306_cmd(0xAE); // display off
+  PLLFRQ = (1<<PLLUSB)|(0x0A<<PDIV0);
+  PLLCSR = (1<<PINDIV)|(1<<PLLE);
+  while( !(PLLCSR & (1<<PLOCK)) ){}
+  
+  UHWCON = (1<<UVREGE);
+  UDCON &= ~(1<<DETACH);
+  USBCON = (1<<USBE);
+  
+  UDIEN |= (1<<EORSTE);
+  
+  EP0_init();
+  ACM_EPN_init();
 
-    ssd1306_cmd(0xA8); ssd1306_cmd(0x3F); // 64 height (63+1) multiplex
-  	ssd1306_cmd(0xC8); // reverse COM scam (top-to-bottom)
-	  ssd1306_cmd(0x20); ssd1306_cmd(0x00); // 0x00 horizontal adressing
+  _delay_ms(100);
 
-    ssd1306_cmd(0x8D); ssd1306_cmd(0x14); // charge pump enable during display on
+	sei(); /* End Setup - all interrupts */
 
-	  ssd1306_cmd(0xAF); // display on
-	  
-    for(uint16_t i=0; i<1024; i++){
-		  ssd1306_data(0x00);
-		}
-    _delay_ms(1000);
-	  for(uint16_t i=0; i<1024; i++){
-		  ssd1306_data(0xFF);  
-		}
-	} else {
-    CLR(PORTB, PB5);
+	for(;;){
+    SET(PINB, PB0);
+    _delay_ms(500);
   }
 
-	ADCSRA = (1<<ADEN)|(0x07<<ADPS0);
-	ADCSRB = 0x00;
-	
-	ADMUX = (0<<REFS1)|(1<<REFS0)|(0<<ADLAR)|(0x07);
-  CLR(ADCSRB, MUX5);
-	
-	servo_init();
-
-	UART_init();
-	
-	timer0_init(); /* ALWAYS the last step in setup */
-	sei(); /* End Setup - all interrupts */
-	static uint16_t now_ms; /* scheduler code :3 */
-	for(;;){
-		atomic_get_ms(&now_ms);
-		for (int8_t i=0; i<ARRAY_SIZE(tasks); i++){
-			if(now_ms - tasks[i].last_ms >= tasks[i].interval_ms){
-				tasks[i].last_ms = now_ms;
-				tasks[i].run();
-			}
-		}
-	} /* end scheduler code :3 */
-	
 	return 0;
 }
-
-void blink(void){
-	SET(PIND, PD5);
-  return;
-}
-
-void servo_task(void){
-  OCR1B = (SERVO_MIN_US-64) + A0_val ;
-  return;
-}
-
-void ADC_task(void){
-	ADCSRA |= (1<<ADSC);
-	while( !!(ADCSRA & (1<<ADSC)) ){}
-
-  A0_val = (ADC<<1);
-  return;
-}
-
