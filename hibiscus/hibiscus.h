@@ -5,18 +5,23 @@
 
 /* USB Standard Request Codes */
 
-#define USBSTDREQ_SET_ADDRESS 0x05
-#define USBSTDREQ_GET_DESCRIPTOR 0x06
-#define USBSTDREQ_SET_CONFIGURATION 0x09         
+#define USBSTDREQ_GET_STATUS (0x00)
+#define USBSTDREQ_SET_ADDRESS (0x05)
+#define USBSTDREQ_GET_DESCRIPTOR (0x06)
+#define USBSTDREQ_SET_CONFIGURATION (0x09)    
 
-/* End USBSTDREQ */
+#define ACMSTDREQ_SET_LINE_CODING (0x20)
+#define ACMSTDREQ_GET_LINE_CODING (0x21)
+#define ACMSTDREQ_SET_CONTROL_LINE_STATE (0x22)
+
+/* End USBSTDREQ-ACMSTDREQ */
 
 #define ACM_init() ({ PLL_init(); USB_init(); })
 
-#define VENDOR_HEX 0x1209
-#define PRODUCT_HEX 0x0007
+#define VENDOR_HEX (0x1209)
+#define PRODUCT_HEX (0x0007)
 
-/* Starts PLL @96MHz (Postcaler Div 2) */
+/* Starts PLL @96MHz (Postcaler Div 2 for USB, Div 1.5 for TC4 - Ideal according to specification) */
 void PLL_init(void);
 
 /* Starts USB peripheral and interrupts */

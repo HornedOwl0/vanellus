@@ -16,16 +16,11 @@ int main(void){
   
   _delay_ms(20);
 
-  SET(DDRD, PD5);
-	SET(DDRB, PB0);
-  SET(PORTB, PB0);
-  CLR(PORTD, PD5);
-
   ACM_init();
 
   wdt_enable(WDTO_2S);
 
-  static char buf[128] = {0};
+  static char buf[16] = {0};
 
 	sei(); /* End Setup - all interrupts */
 

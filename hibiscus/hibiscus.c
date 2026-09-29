@@ -209,24 +209,36 @@ ISR(USB_COM_vect){
 
   if ( GET(UEINTX, RXSTPI) ){
     uint8_t bmRequestType = UEDATX;
+    (void)bmRequestType;
+
     uint8_t bRequest = UEDATX;
+    (void)bRequest;
 
     uint16_t wValue = UEDATX; 
     wValue |= ((uint16_t)UEDATX)<<8;
+    (void)wValue;
 
     uint16_t wIndex = UEDATX;
     wIndex |= ((uint16_t)UEDATX)<<8;
+    (void)wIndex;
 
     uint16_t wLength = UEDATX; 
     wLength |= ((uint16_t)UEDATX)<<8;
+    (void)wLength;
 
     CLRBM(UEINTX, (1<<FIFOCON)|(1<<RXSTPI) );
 
     switch (bRequest) {
+        case USBSTDREQ_GET_STATUS:
+          while ( !GET(UEINTX, TXINI) ){}
+          while(wLength--){
+            UEDATX = 0x00;
+          }
+          CLRBM(UEINTX, (1<<TXINI)|(1<<FIFOCON) );
+
+          break;
+
         case USBSTDREQ_SET_ADDRESS:
-        (void)bmRequestType;
-        (void)wIndex;
-        (void)wLength;
         // wValue is our Address -> Record it in UADD, keep ADDEN clr
         UDADDR = (uint8_t)(wValue&0x7F);
         // send a ZLP
@@ -238,9 +250,6 @@ ISR(USB_COM_vect){
         break;
 
       case USBSTDREQ_GET_DESCRIPTOR:
-        (void)bmRequestType;
-        (void)wIndex;
-
         const __flash uint8_t *ptr = NULL;
         uint16_t len = 0;
 
@@ -267,6 +276,9 @@ ISR(USB_COM_vect){
                 ptr = &USB_str_product[0];
                 len = ARRAY_SIZE(USB_str_product);
                 break;
+              default:
+                SET(UECONX, STALLRQ);
+                break;
             }
             break;
         }
@@ -288,9 +300,6 @@ ISR(USB_COM_vect){
         break;
 
       case USBSTDREQ_SET_CONFIGURATION:
-        (void)bmRequestType;
-        (void)wIndex;
-        (void)wLength;
         switch (wValue){
           case 0: // Unconfigured State
             USB_ZLP();
@@ -304,6 +313,31 @@ ISR(USB_COM_vect){
             SET(UECONX, STALLRQ);
             break;
         }
+        break;
+/*
+      case ACMSTDREQ_SET_LINE_CODING: // These are Unsupported (by descriptor), but we can void them to avoid errors anyway
+        uint8_t dummy_buf[7] = {0};
+        (void)dummy_buf;
+
+        for (int8_t i=0; i<wLength; i++){
+          dummy_buf[i] = UEDATX;
+        }
+
+        CLRBM(UEINTX, (1<<RXOUTI)|(1<<FIFOCON) ); // Flush and ZLP
+        USB_ZLP();
+        break;
+
+      case ACMSTDREQ_GET_LINE_CODING: // Also Unsupported
+        (void)bmRequestType;
+        (void)wValue;
+        (void)wIndex;
+
+        USB_ZLP();
+        break;
+
+*/
+      case ACMSTDREQ_SET_CONTROL_LINE_STATE: // Same as SET_LINE_CONFIG, just acknowledge the packet.
+        USB_ZLP();
         break;
 
       default:
