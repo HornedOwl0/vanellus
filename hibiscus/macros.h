@@ -21,7 +21,7 @@
 #define CLRBM(REG, BM) (REG &= ~(BM) )
 #define TOGBM(REG, BM) (REG ^= (BM) )
 
-#define GET(REG, POS) ( !!(REG & _BV(POS)) )
+#define GET(REG, POS) ( !!(REG & (1<<POS)) )
 
 #define MSB(b) (uint8_t)((b>>8)&0xFF)
 #define LSB(b) (uint8_t)(b&0xFF)
