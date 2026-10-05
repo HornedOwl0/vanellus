@@ -3,158 +3,33 @@
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
+#include <avr/wdt.h>
 
-#include <util/delay.h>
 #include <util/atomic.h>
 
 #include "macros.h"
 #include "hibiscus.h"
+#include "descriptors.h"
 
-/* Descriptors */
+#ifndef FLASH_BAUD
+  #define FLASH_BAUD 1200U
+#endif /* FLASH_BAUD */ 
 
-static const __flash uint8_t USB_device_descriptor[] = {
-  18, // bLength
-  0x01, // bDescriptorType
-  LSB(0x0200), MSB(0x0200), // bcdUSB
-  0xEF,  // bDeviceClass - Misc. Device
-  0x02,  // bDeviceSubclass - Common Class
-  0x01,  // bDeviceProtocol - IAD
-  64, // bMaxPacketSize
-  LSB(VENDOR_HEX), MSB(VENDOR_HEX), // idVendor
-  LSB(PRODUCT_HEX), MSB(PRODUCT_HEX), // idProduct
-  LSB(0x0100), MSB(0x0100), // bcdDevice
-  1,                // iManufacturer
-  2,              // iProduct
-  0,              // iSerialNumber
-  1,                // bNumConfigurations
+#ifdef ACM_ALL_REQUESTS
+
+/* Runtime Variables */
+
+static volatile uint8_t ACM_line_coding[7] = {
+  LSB(38400), MSB(38400), 0, 0, // dwDTERate
+  0, // bCharformat
+  0, // bParity
+  8, // bDatabits
 };
+static volatile uint8_t USB_bRequest_pending = 0x00;
 
-static const __flash uint8_t USB_config_descriptor[] = {
-  9, // bLength
-  0x02, // bDescriptorType
-  LSB(75), MSB(75),  // wTotalLength
-  2,  // bNumInterfaces (CCI, DCI)
-  1, // bConfigurationValue
-  2,      // iConfiguration 
-  0xC0, // bmAttributes (Self-Powered)
-  100,   // bMaxPower * 2mA
-  
-  /* Interface Association Descriptor */
-  
-  8, // bLength
-  0x0B,   // bDescriptorType
-  0,   // bFirstInterface
-  2,   // bInterfaceCount
-  0x02,   // bFunctionClass - USB CDC set EFh for Device
-  0x02,   // bFunctionSubclass - CDC ACM set 02h for Device
-  0x00,   // bFunctionProtocol - ( No Specific Protocol ) set 01h for Device
-  2,      // iFunction
+#endif
 
-  /* Interface (CCI) Descriptor */
-
-  9, // bLength
-  0x04, // bDescriptorType
-  0,  // bInterfaceNumber
-  0,  // bAlternateSetting
-  1, // bNumEndpoints
-  0x02, // bInterfaceClass 
-  0x02, // bInterfaceSubClass
-  0x00,   // bInterfaceProtocol ( No Specific Protocol )
-  2, // iInterface
-
-  /* CDC Header Functional Descriptor */
-  
-  5, // bFunctionLength
-  0x24,   // bDescriptorType (CS_INTERFACE 24h)
-  0x00,    // bDescriptorSubtype (Header 00h)
-  LSB(0x0120), MSB(0x0120),  // bcdCDC - CDC 1.2 Specification
-  
-  /* Call Management Functional Descriptor */
-  
-  5, // bFunctionLength
-  0x24,   // bDescriptorType (CS_INTERFACE 24h)
-  0x01,    // bDescriptorSubtype (Call Management 01h)
-  0x02,  // bmCapabilities (Call Management over DCI)
-  1,     // bDataInterface (Use Interface 1 (DCI) for Call Management)
-  
-  /* ACM Functional Descriptor */
-  
-  4, // bFunctionLength
-  0x24,   // bDescriptorType (CS_INTERFACE 24h)
-  0x02,    // bDescriptorSubtype (ACM 02h)
-  0x00,  // bmCapabilities 
-  // 02h DOES support these: ( 00h DOES NOT )
-  // Set_Line_Coding, Set_Control_Line_State
-  // Get_Line_Coding, NOTIF Serial_State
-
-  /* Union Functional Descriptor */
-
-  5, // bFunctionLength
-  0x24,   // bDescriptorType (CS_INTERFACE 24h)
-  0x06,   // bDescriptorSubtype (Union 06h)
-  0,    // bControlInterface (CCI)
-  1,  // bSubordinateInterface0 (DCI)
-
-  /* EP1 (Interrupt IN) Descriptor */
-
-  7, // bLength
-  0x05,   // bDescriptorType
-  0x81,   // bEndpointAddress (0nh for OUT, 8nh for IN)
-  0x03,   // bmAttributes (Data Interrupt)
-  LSB(16), MSB(16), // wMaxPacketSize
-  24, // bInterval * 1ms
-  
-  /* Interface (DCI) Descriptor */
-
-  9, // bLength
-  0x04, // bDescriptorType
-  1,  // bInterfaceNumber
-  0,  // bAlternateSetting
-  2, // bNumEndpoints
-  0x0A, // bInterfaceClass 
-  0x00, // bInterfaceSubClass
-  0x00,   // bInterfaceProtocol
-  2, // iInterface
-  
-  /* EP2 (TX - Bulk IN) Descriptor */
-
-  7, // bLength
-  0x05,   // bDescriptorType
-  0x82,   // bEndpointAddress
-  0x02,   // bmAttributes (Data Bulk)
-  LSB(64), MSB(64), // wMaxPacketSize
-  0, // bInterval * 1ms
-  
-  /* EP3 (RX - Bulk OUT) Descriptor */
-
-  7, // bLength
-  0x05,   // bDescriptorType
-  0x03,   // bEndpointAddress
-  0x02,   // bmAttributes
-  LSB(64), MSB(64), // wMaxPacketSize
-  0, // bInterval * 1ms
-  
-};
-
-static const __flash uint8_t USB_supported_langid[] = {
-  4, // bLength
-  0x03, // bDescriptorType
-  LSB(0x0409), MSB(0x0409), // English
-};
-
-static const __flash uint8_t USB_str_manufacturer[] = {
-  22, // bLength
-  0x03, // bDescriptorType
-  'H',0,'o',0,'r',0,'n',0,'e',0,'d',0,'O',0,'w',0,'l',0,'_',0,
-};
-
-static const __flash uint8_t USB_str_product[] = {
-  18, // bLength
-  0x03, // bDescriptorType
-  'H',0,'i',0,'b',0,'i',0,'s',0,'c',0,'u',0,'s',0,
-};
-
-/* End Descriptors */
+/* Useful Functions */
 
 static void USB_ACM_EPN_disable(void){
   UERST |= (0x0E<<EPRST0); // Reset FIFO for EP1-EP2-EP3
@@ -173,34 +48,93 @@ static void USB_ACM_EPN_init(void){
   SET(UECONX, EPEN);
   UECFG0X = (0x03<<EPTYPE0)|(1<<EPDIR); // IN
   UECFG1X = (0x01<<EPSIZE0)|(0x00<<EPBK0)|(1<<ALLOC);
+  UEIENX = 0x00;
 
   UENUM = 2; // Endpoint 2 - Bulk IN - 64B
   SET(UECONX, EPEN);
   UECFG0X = (0x02<<EPTYPE0)|(1<<EPDIR); // IN
-  UECFG1X = (0x03<<EPSIZE0)|(0x00<<EPBK0)|(1<<ALLOC);
+  UECFG1X = (0x03<<EPSIZE0)|(0x01<<EPBK0)|(1<<ALLOC); // Double Banked
+  UEIENX = 0x00;
 
   UENUM = 3; // Endpoint 3 - Bulk OUT - 64B
   SET(UECONX, EPEN);
   UECFG0X = (0x02<<EPTYPE0)|(0<<EPDIR); // OUT
+  UECFG1X = (0x03<<EPSIZE0)|(0x01<<EPBK0)|(1<<ALLOC); // Double Banked
+  UEIENX = 0x00;
+}
+
+static void USB_EP0_init(void);
+inline void USB_EP0_init(void){
+  UENUM = 0; // Endpoint 0 - Control (Bidirectional)
+  SET(UERST, EPRST0);  // Reset FIFO Buffer for EP0
+  CLR(UERST, EPRST0);  // Complete the Reset Operation
+  
+  CLR(UECONX, EPEN);
+  SET(UECONX, EPEN);
+  
+  UECFG0X = (0x00<<EPTYPE0)|(0<<EPDIR); // OUT
   UECFG1X = (0x03<<EPSIZE0)|(0x00<<EPBK0)|(1<<ALLOC);
+  
+  UEIENX = (1<<RXSTPE)|(1<<RXOUTE); // The ONLY interrupt we need.
+}
+
+static void USB_HANDLE_GET_DESCRIPTOR(uint16_t wValue, uint16_t wLength){
+  const __flash uint8_t *ptr = NULL;
+  uint16_t len = 0;
+
+  switch ( MSB(wValue) ) {
+    case 0x01: // Device Descriptor
+      ptr = &USB_device_descriptor[0];
+      len = ARRAY_SIZE(USB_device_descriptor);
+      break;
+    case 0x02: // Config Descriptor
+      ptr = &USB_config_descriptor[0];
+      len = ARRAY_SIZE(USB_config_descriptor);
+      break;
+    case 0x03: // String Descriptor
+      switch ( LSB(wValue) ) {
+        case 0:
+          ptr = &USB_supported_langid[0];
+          len = ARRAY_SIZE(USB_supported_langid);
+          break;
+        case 1:
+          ptr = &USB_str_manufacturer[0];
+          len = ARRAY_SIZE(USB_str_manufacturer);
+          break;
+        case 2:
+          ptr = &USB_str_product[0];
+          len = ARRAY_SIZE(USB_str_product);
+          break;
+        default:
+          SET(UECONX, STALLRQ);
+          break;
+      }
+      break;
+  }
+  len = MIN(len, wLength);
+
+  if ( ptr != NULL ){
+    int8_t chk_ZLP = ( (0 < len) && (len < wLength) && ( len%64==0 ) );
+    while ( len ) {
+      while ( !GET(UEINTX, TXINI) ){} // await tx ready
+      uint8_t buf_ctu = 0;
+      while ( len && ( (buf_ctu++)<64) ){ // load buffer
+        UEDATX = *(ptr++);
+        len--;
+      }
+      CLRBM(UEINTX, (1<<TXINI)|(1<<FIFOCON));
+    }
+    if( chk_ZLP ){ USB_ZLP(); }
+  } else { 
+    SET(UECONX, STALLRQ); 
+  }
 }
 
 ISR(USB_GEN_vect){
   if ( GET(UDINT, EORSTI) ){
     CLR(UDINT, EORSTI);
     
-    /* EP0 Init */
-    UENUM = 0; // Endpoint 0 - Control (Bidirectional)
-    SET(UERST, EPRST0);  // Reset FIFO Buffer for EP0
-    CLR(UERST, EPRST0);  // Complete the Reset Operation
-    
-    CLR(UECONX, EPEN);
-    SET(UECONX, EPEN);
-    
-    UECFG0X = (0x00<<EPTYPE0)|(0<<EPDIR); // OUT
-    UECFG1X = (0x03<<EPSIZE0)|(0x00<<EPBK0)|(1<<ALLOC);
-    
-    SET(UEIENX, RXSTPE);
+    USB_EP0_init();
   } 
 }
 
@@ -214,31 +148,37 @@ ISR(USB_COM_vect){
     uint8_t bRequest = UEDATX;
     (void)bRequest;
 
+    #ifdef ACM_ALL_REQUESTS
+    USB_bRequest_pending = bRequest;
+    #endif 
+
     uint16_t wValue = UEDATX; 
-    wValue |= ((uint16_t)UEDATX)<<8;
+    wValue |= ((uint16_t)UEDATX<<8);
     (void)wValue;
 
     uint16_t wIndex = UEDATX;
-    wIndex |= ((uint16_t)UEDATX)<<8;
+    wIndex |= ((uint16_t)UEDATX<<8);
     (void)wIndex;
 
     uint16_t wLength = UEDATX; 
-    wLength |= ((uint16_t)UEDATX)<<8;
+    wLength |= ((uint16_t)UEDATX<<8);
     (void)wLength;
 
-    CLRBM(UEINTX, (1<<FIFOCON)|(1<<RXSTPI) );
-
+    CLR(UEINTX, RXSTPI);
+    
     switch (bRequest) {
-        case USBSTDREQ_GET_STATUS:
-          while ( !GET(UEINTX, TXINI) ){}
-          while(wLength--){
-            UEDATX = 0x00;
-          }
-          CLRBM(UEINTX, (1<<TXINI)|(1<<FIFOCON) );
+      #ifdef ACM_ALL_REQUESTS
+      case USBSTDREQ_GET_STATUS:
+        while ( !GET(UEINTX, TXINI) ){}
+        while(wLength--){
+          UEDATX = 0x00;
+        }
+        CLRBM(UEINTX, (1<<TXINI)|(1<<FIFOCON));
 
-          break;
+        break;
+      #endif
 
-        case USBSTDREQ_SET_ADDRESS:
+      case USBSTDREQ_SET_ADDRESS:
         // wValue is our Address -> Record it in UADD, keep ADDEN clr
         UDADDR = (uint8_t)(wValue&0x7F);
         // send a ZLP
@@ -250,53 +190,7 @@ ISR(USB_COM_vect){
         break;
 
       case USBSTDREQ_GET_DESCRIPTOR:
-        const __flash uint8_t *ptr = NULL;
-        uint16_t len = 0;
-
-        switch ( MSB(wValue) ) {
-          case 0x01: // Device Descriptor
-            ptr = &USB_device_descriptor[0];
-            len = ARRAY_SIZE(USB_device_descriptor);
-            break;
-          case 0x02: // Config Descriptor
-            ptr = &USB_config_descriptor[0];
-            len = ARRAY_SIZE(USB_config_descriptor);
-            break;
-          case 0x03: // String Descriptor
-            switch ( LSB(wValue) ) {
-              case 0:
-                ptr = &USB_supported_langid[0];
-                len = ARRAY_SIZE(USB_supported_langid);
-                break;
-              case 1:
-                ptr = &USB_str_manufacturer[0];
-                len = ARRAY_SIZE(USB_str_manufacturer);
-                break;
-              case 2:
-                ptr = &USB_str_product[0];
-                len = ARRAY_SIZE(USB_str_product);
-                break;
-              default:
-                SET(UECONX, STALLRQ);
-                break;
-            }
-            break;
-        }
-        len = MIN(len, wLength);
-
-        if ( ptr != NULL ){
-          int8_t chk_ZLP = ( (0 < len) && (len < wLength) && ( len%64==0 ) );
-          while ( len ) {
-            while ( !GET(UEINTX, TXINI) ){} // await tx ready
-            uint8_t buf_ctu = 0;
-            while ( len && ( (buf_ctu++)<64) ){ // load buffer
-              UEDATX = *(ptr++);
-              len--;
-            }
-            CLRBM(UEINTX, (1<<TXINI)|(1<<FIFOCON) );
-          }
-          if( chk_ZLP ){ USB_ZLP(); }
-        } else { SET(UECONX, STALLRQ); }
+        USB_HANDLE_GET_DESCRIPTOR(wValue, wLength);
         break;
 
       case USBSTDREQ_SET_CONFIGURATION:
@@ -314,29 +208,28 @@ ISR(USB_COM_vect){
             break;
         }
         break;
-/*
-      case ACMSTDREQ_SET_LINE_CODING: // These are Unsupported (by descriptor), but we can void them to avoid errors anyway
-        uint8_t dummy_buf[7] = {0};
-        (void)dummy_buf;
 
-        for (int8_t i=0; i<wLength; i++){
-          dummy_buf[i] = UEDATX;
+      case ACMSTDREQ_SET_LINE_CODING: // Pass to next stage, do not STALL as long as wLength is correct
+        if (wLength!=7){ SET(UECONX, STALLRQ); }
+        break;
+
+      #ifdef ACM_ALL_REQUESTS
+      case ACMSTDREQ_GET_LINE_CODING: // Return Current CFG
+        { // Scope GET_LINE_CODING
+        while ( !GET(UEINTX, TXINI) ){}
+        for (int8_t i=0; i<MIN(ARRAY_SIZE(ACM_line_coding), wLength); i++){
+          UEDATX = ACM_line_coding[i];
         }
+        CLRBM(UEINTX, (1<<TXINI)|(1<<FIFOCON));
+        } // Scope GET_LINE_CODING
+        break; 
+      #endif
 
-        CLRBM(UEINTX, (1<<RXOUTI)|(1<<FIFOCON) ); // Flush and ZLP
+      case ACMSTDREQ_SET_CONTROL_LINE_STATE: // just acknowledge the packet.
         USB_ZLP();
         break;
 
-      case ACMSTDREQ_GET_LINE_CODING: // Also Unsupported
-        (void)bmRequestType;
-        (void)wValue;
-        (void)wIndex;
-
-        USB_ZLP();
-        break;
-
-*/
-      case ACMSTDREQ_SET_CONTROL_LINE_STATE: // Same as SET_LINE_CONFIG, just acknowledge the packet.
+      case ACMSTDREQ_SEND_BREAK: // just acknowledge the packet.
         USB_ZLP();
         break;
 
@@ -346,17 +239,67 @@ ISR(USB_COM_vect){
         break;
     }
   }
+  #ifdef ACM_ALL_REQUESTS
+  if ( GET(UEINTX, RXOUTI) ){ 
+    switch (USB_bRequest_pending){
+      case ACMSTDREQ_SET_LINE_CODING:
+        for (int8_t i=0; i<ARRAY_SIZE(ACM_line_coding); i++){
+          ACM_line_coding[i] = UEDATX;
+        }
+        CLRBM(UEINTX, (1 << RXOUTI) | (1 << FIFOCON)); // Handshake and ACK
+        USB_ZLP();
+
+        uint32_t baud = (uint32_t)ACM_line_coding[0] | (uint32_t)ACM_line_coding[1]<<8;
+        baud |= (uint32_t)ACM_line_coding[2]<<16 | (uint32_t)ACM_line_coding[3]<<24;
+
+        if ( baud == 1200 ){
+          uint16_t *addr = (uint16_t*)0x0800;
+
+          *(addr) = 0x7777; // Key to bootloader
+
+          wdt_enable(WDTO_15MS);
+          for(;;){}
+        }
+
+        break;
+        default:
+        CLRBM(UEINTX, (1 << RXOUTI) | (1 << FIFOCON)); // Handshake and STALL
+        SET(UECONX, STALLRQ);
+        break;
+    }
+  }
+  #else 
+  if ( GET(UEINTX, RXOUTI) ){ // Since we only accept ONE request with a data field:
+    uint32_t baud = ((uint32_t)UEDATX);
+    baud |= ((uint32_t)UEDATX<<8);
+    baud |= ((uint32_t)UEDATX<<16);
+    baud |= ((uint32_t)UEDATX<<24);
+    CLRBM(UEINTX, (1 << RXOUTI) | (1 << FIFOCON)); // Handshake and ACK
+    USB_ZLP();
+
+    if ( baud == 1200 ){
+      uint16_t *addr = (uint16_t*)0x0800;
+
+      *(addr) = 0x7777; // Key to bootloader
+
+      wdt_enable(WDTO_15MS);
+      for(;;){}
+    }
+  }
+  #endif
+
 }
 
 inline void PLL_init(void){
   PLLFRQ = (1<<PLLUSB)|(0x0A<<PDIV0)|(0x02<<PLLTM0);
-  #if (F_CPU==16000000UL)
+  #if (F_OSC==16000000UL)
     PLLCSR = (1<<PINDIV)|(1<<PLLE);
-  #elif (F_CPU==8000000UL)
+  #elif (F_OSC==8000000UL)
     PLLCSR = (0<<PINDIV)|(1<<PLLE);
-  #endif /* if 0 */
+  #else
+    #error "F_OSC (XTAL) not defined/unsupported for USB peripheral! (Hibiscus)"
+  #endif /* F_OSC */
   while( !(PLLCSR & (1<<PLOCK)) ){}
-
   return;
 }
 
@@ -373,7 +316,7 @@ inline void USB_init(void){
   return;
 }
 
-inline void USB_ZLP(void){
+void USB_ZLP(void){
   while ( !GET(UEINTX, TXINI) ){}
   CLRBM(UEINTX, (1<<TXINI)|(1<<FIFOCON) );
   return;
@@ -397,7 +340,7 @@ void ACM_puts(char *str){
 }
 
 void ACM_putc(const char c){
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
+  ATOMIC_BLOCK(ATOMIC_RE:STORESTATE){
     UENUM = 2; // Bulk IN
 
     if( GET(UEINTX, TXINI) ){
