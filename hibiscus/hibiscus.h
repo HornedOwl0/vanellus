@@ -22,6 +22,18 @@
 #define VENDOR_HEX (0x1209)
 #define PRODUCT_HEX (0x0007)
 
+/* Runtime Variables */
+
+#ifdef ACM_ALL_REQUESTS
+static volatile uint8_t ACM_line_coding[7] = {
+  (38400&0xFF), ((38400>>8)&0xFF), 0, 0, // dwDTERate
+  0, // bCharformat
+  0, // bParity
+  8, // bDatabits
+};
+static volatile uint8_t USB_bRequest_pending = 0x00;
+#endif /* ACM_ALL_REQUESTS */
+
 /* Starts PLL @96MHz (Postcaler Div 2 for USB, Div 1.5 for TC4 - Ideal according to specification) */
 void PLL_init(void);
 

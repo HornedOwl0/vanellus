@@ -7,7 +7,27 @@
 
 #include <util/atomic.h>
 
-#include "macros.h"
+/* Useful Macros */
+
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
+
+#define MIN(a,b) ( (a) < (b) ? (a) : (b) )
+
+#define SET(REG, POS) (REG |= (1<<POS))
+#define CLR(REG, POS) (REG &= ~(1<<POS))
+#define TOG(REG, POS) (REG ^= (1<<POS))
+
+#define SETBM(REG, BM) (REG |= (BM) )
+#define CLRBM(REG, BM) (REG &= ~(BM) )
+#define TOGBM(REG, BM) (REG ^= (BM) )
+
+#define GET(REG, POS) ( !!(REG & (1<<POS)) )
+
+#define MSB(b) (uint8_t)((b>>8)&0xFF)
+#define LSB(b) (uint8_t)(b&0xFF)
+
+/* End Macros */
+
 #include "hibiscus.h"
 #include "descriptors.h"
 
@@ -15,19 +35,17 @@
   #define FLASH_BAUD 1200U
 #endif /* FLASH_BAUD */ 
 
-#ifdef ACM_ALL_REQUESTS
-
 /* Runtime Variables */
 
-static volatile uint8_t ACM_line_coding[7] = {
+#ifdef ACM_ALL_REQUESTS
+extern volatile uint8_t ACM_line_coding[7] = {
   LSB(38400), MSB(38400), 0, 0, // dwDTERate
   0, // bCharformat
   0, // bParity
   8, // bDatabits
 };
-static volatile uint8_t USB_bRequest_pending = 0x00;
-
-#endif
+extern volatile uint8_t USB_bRequest_pending = 0x00;
+#endif /* ACM_ALL_REQUESTS */
 
 /* Useful Functions */
 
@@ -277,7 +295,7 @@ ISR(USB_COM_vect){
     CLRBM(UEINTX, (1 << RXOUTI) | (1 << FIFOCON)); // Handshake and ACK
     USB_ZLP();
 
-    if ( baud == 1200 ){
+    if ( baud == FLASH_BAUD ){
       uint16_t *addr = (uint16_t*)0x0800;
 
       *(addr) = 0x7777; // Key to bootloader
@@ -297,7 +315,7 @@ inline void PLL_init(void){
   #elif (F_OSC==8000000UL)
     PLLCSR = (0<<PINDIV)|(1<<PLLE);
   #else
-    #error "F_OSC (XTAL) not defined/unsupported for USB peripheral! (Hibiscus)"
+    #error "(Hibiscus) F_OSC (XTAL) not defined/unsupported! Try 16/8MHz"
   #endif /* F_OSC */
   while( !(PLLCSR & (1<<PLOCK)) ){}
   return;
@@ -340,7 +358,7 @@ void ACM_puts(char *str){
 }
 
 void ACM_putc(const char c){
-  ATOMIC_BLOCK(ATOMIC_RE:STORESTATE){
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
     UENUM = 2; // Bulk IN
 
     if( GET(UEINTX, TXINI) ){
