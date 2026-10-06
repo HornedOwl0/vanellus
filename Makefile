@@ -12,11 +12,11 @@ PORT=/dev/ttyACM0
 
 .PHONY: clean all flash
 
-obj/hedera.o: ./hedera/hedera.c ./hedera/hedera.h
-	$(CC) $(CFLAGS) -o $@ -c $<
-
-obj/hibiscus.o: ./hibiscus/hibiscus.c ./hibiscus/hibiscus.h
+obj/hibiscus.o: ./hibiscus/hibiscus.c $(DEPS)
 	$(CC) $(CFLAGS) -DF_OSC=$(XTAL) -DFLASH_BAUD=$(FLASH_BAUD)U -o $@ -c $<
+
+obj/hedera.o: ./hedera/hedera.c $(DEPS)
+	$(CC) $(CFLAGS) -o $@ -c $<
 
 obj/%.o: ./lib/%.c $(DEPS)
 	$(CC) $(CFLAGS) -o $@ -c $<

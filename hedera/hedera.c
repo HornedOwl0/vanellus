@@ -12,7 +12,7 @@
 #define CLR(REG, POS) (REG &= ~(1<<POS))
 #define TOG(REG, POS) (REG ^= (1<<POS))
 
-#define CLAMP(x, m0, m1) ( (x < m0)?(m0):((x > m1)?(m1):(x)) )
+#define SERVO_MICROS(x) (F_CPU==16000000UL ? x<<1 : x)
 
 /* End Macros */
 

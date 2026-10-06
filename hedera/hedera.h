@@ -9,7 +9,6 @@
   #define SERVO_MAX_US 2400U
 #endif
 #define SERVO_RANGE (SERVO_MAX_US - SERVO_MIN_US)
-#define SERVO_MICROS(x) (F_CPU==16000000UL ? x<<1 : x)
 
 struct mntlst{
 	volatile uint8_t *port;
