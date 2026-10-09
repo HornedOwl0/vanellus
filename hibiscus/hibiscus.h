@@ -44,13 +44,13 @@ void USB_init(void);
 void USB_ZLP(void);
 
 /* Writes a string (up to 64B), raw into the FIFO and sends it immediately */
-void ACM_puts(char *str);
+void ACM_puts(const char __memx *str);
 
 /* Writes a char, raw into the FIFO and sends it immediately */
 void ACM_putc(const char c);
 
 /* Returns the number of chars available for reading in the RX FIFO */
-int8_t ACM_available(void);
+uint8_t ACM_available(void);
 
 /* Returns a single char from the RX FIFO */
 char ACM_getc(void);

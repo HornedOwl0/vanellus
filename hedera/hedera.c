@@ -64,7 +64,7 @@ inline void servo_init(void){
 
 	OCR3A = SERVO_MIN_US;
 	OCR3B = SERVO_MIN_US;
-  OCR3C = SERVO_MIN_US;
+	OCR3C = SERVO_MIN_US;
 
 	/* end TC3 setup*/
 	return;

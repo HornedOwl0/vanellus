@@ -22,6 +22,7 @@
 #define TOGBM(REG, BM) (REG ^= (BM) )
 
 #define GET(REG, POS) ( !!(REG & (1<<POS)) )
+#define GETBM(REG, BM) ( !!(REG & (BM)) )
 
 #define MSB(b) (uint8_t)((b>>8)&0xFF)
 #define LSB(b) (uint8_t)(b&0xFF)
@@ -37,28 +38,31 @@
 
 /* Runtime Variables */
 
-#ifdef ACM_ALL_REQUESTS
-extern volatile uint8_t ACM_line_coding[7] = {
+static struct __attribute__((packed)){
+  uint8_t coding[7];
+  uint8_t state;
+} ACM_line = {
+  .coding = {
   LSB(38400), MSB(38400), 0, 0, // dwDTERate
-  0, // bCharformat
+  0, // bCharFormat
   0, // bParity
-  8, // bDatabits
+  8, // bFormat
+  },
+  .state = 0x00,
 };
-extern volatile uint8_t USB_bRequest_pending = 0x00;
-#endif /* ACM_ALL_REQUESTS */
 
 /* Useful Functions */
 
-static void USB_ACM_EPN_disable(void){
-  UERST |= (0x0E<<EPRST0); // Reset FIFO for EP1-EP2-EP3
-  UERST &= ~(0x0E<<EPRST0); 
-
+static void ACM_EPN_disable(void){
   UENUM = 1; CLR(UECONX, EPEN);
   UENUM = 2; CLR(UECONX, EPEN);
   UENUM = 3; CLR(UECONX, EPEN);
+
+  UERST |= (0x0E<<EPRST0); // Reset FIFO for EP1-EP2-EP3
+  UERST &= ~(0x0E<<EPRST0); 
 }
 
-static void USB_ACM_EPN_init(void){
+static void ACM_EPN_init(void){
   UERST |= (0x0E<<EPRST0); // Reset FIFO for EP1-EP2-EP3
   UERST &= ~(0x0E<<EPRST0); 
 
@@ -71,13 +75,13 @@ static void USB_ACM_EPN_init(void){
   UENUM = 2; // Endpoint 2 - Bulk IN - 64B
   SET(UECONX, EPEN);
   UECFG0X = (0x02<<EPTYPE0)|(1<<EPDIR); // IN
-  UECFG1X = (0x03<<EPSIZE0)|(0x01<<EPBK0)|(1<<ALLOC); // Double Banked
+  UECFG1X = (0x03<<EPSIZE0)|(0x00<<EPBK0)|(1<<ALLOC); // Single Banked
   UEIENX = 0x00;
 
   UENUM = 3; // Endpoint 3 - Bulk OUT - 64B
   SET(UECONX, EPEN);
   UECFG0X = (0x02<<EPTYPE0)|(0<<EPDIR); // OUT
-  UECFG1X = (0x03<<EPSIZE0)|(0x01<<EPBK0)|(1<<ALLOC); // Double Banked
+  UECFG1X = (0x03<<EPSIZE0)|(0x00<<EPBK0)|(1<<ALLOC); // Single Banked
   UEIENX = 0x00;
 }
 
@@ -94,6 +98,14 @@ inline void USB_EP0_init(void){
   UECFG1X = (0x03<<EPSIZE0)|(0x00<<EPBK0)|(1<<ALLOC);
   
   UEIENX = (1<<RXSTPE)|(1<<RXOUTE); // The ONLY interrupt we need.
+}
+
+static void USB_EP0_disable(void);
+inline void USB_EP0_disable(void){
+  UENUM = 0; CLR(UECONX, EPEN);
+
+  SET(UERST, EPRST0);  // Reset FIFO Buffer for EP0
+  CLR(UERST, EPRST0);  // Complete the Reset Operation
 }
 
 static void USB_HANDLE_GET_DESCRIPTOR(uint16_t wValue, uint16_t wLength){
@@ -149,14 +161,25 @@ static void USB_HANDLE_GET_DESCRIPTOR(uint16_t wValue, uint16_t wLength){
 }
 
 ISR(USB_GEN_vect){
+  uint8_t prev_UENUM = UENUM;
   if ( GET(UDINT, EORSTI) ){
     CLR(UDINT, EORSTI);
     
     USB_EP0_init();
+  }
+
+  if ( GET(UDINT, SUSPI) ){
+    CLR(UDINT, SUSPI);
+    
+    USB_EP0_disable();
+    ACM_EPN_disable();
+    ACM_line.state = 0x00;
   } 
+  UENUM = prev_UENUM;
 }
 
 ISR(USB_COM_vect){
+  uint8_t prev_UENUM = UENUM;
   UENUM = 0;
 
   if ( GET(UEINTX, RXSTPI) ){
@@ -165,10 +188,6 @@ ISR(USB_COM_vect){
 
     uint8_t bRequest = UEDATX;
     (void)bRequest;
-
-    #ifdef ACM_ALL_REQUESTS
-    USB_bRequest_pending = bRequest;
-    #endif 
 
     uint16_t wValue = UEDATX; 
     wValue |= ((uint16_t)UEDATX<<8);
@@ -185,7 +204,6 @@ ISR(USB_COM_vect){
     CLR(UEINTX, RXSTPI);
     
     switch (bRequest) {
-      #ifdef ACM_ALL_REQUESTS
       case USBSTDREQ_GET_STATUS:
         while ( !GET(UEINTX, TXINI) ){}
         while(wLength--){
@@ -194,7 +212,6 @@ ISR(USB_COM_vect){
         CLRBM(UEINTX, (1<<TXINI)|(1<<FIFOCON));
 
         break;
-      #endif
 
       case USBSTDREQ_SET_ADDRESS:
         // wValue is our Address -> Record it in UADD, keep ADDEN clr
@@ -215,11 +232,11 @@ ISR(USB_COM_vect){
         switch (wValue){
           case 0: // Unconfigured State
             USB_ZLP();
-            USB_ACM_EPN_disable();
+            ACM_EPN_disable();
             break;
           case 1: // CDC ACM enable
             USB_ZLP();
-            USB_ACM_EPN_init();
+            ACM_EPN_init();
             break;
           default: // Unsupported Config
             SET(UECONX, STALLRQ);
@@ -231,19 +248,18 @@ ISR(USB_COM_vect){
         if (wLength!=7){ SET(UECONX, STALLRQ); }
         break;
 
-      #ifdef ACM_ALL_REQUESTS
       case ACMSTDREQ_GET_LINE_CODING: // Return Current CFG
         { // Scope GET_LINE_CODING
         while ( !GET(UEINTX, TXINI) ){}
-        for (int8_t i=0; i<MIN(ARRAY_SIZE(ACM_line_coding), wLength); i++){
-          UEDATX = ACM_line_coding[i];
+        for (int8_t i=0; i<MIN(ARRAY_SIZE(ACM_line.coding), wLength); i++){
+          UEDATX = ACM_line.coding[i];
         }
         CLRBM(UEINTX, (1<<TXINI)|(1<<FIFOCON));
         } // Scope GET_LINE_CODING
         break; 
-      #endif
 
       case ACMSTDREQ_SET_CONTROL_LINE_STATE: // just acknowledge the packet.
+        ACM_line.state = LSB(wValue);
         USB_ZLP();
         break;
 
@@ -257,36 +273,7 @@ ISR(USB_COM_vect){
         break;
     }
   }
-  #ifdef ACM_ALL_REQUESTS
-  if ( GET(UEINTX, RXOUTI) ){ 
-    switch (USB_bRequest_pending){
-      case ACMSTDREQ_SET_LINE_CODING:
-        for (int8_t i=0; i<ARRAY_SIZE(ACM_line_coding); i++){
-          ACM_line_coding[i] = UEDATX;
-        }
-        CLRBM(UEINTX, (1 << RXOUTI) | (1 << FIFOCON)); // Handshake and ACK
-        USB_ZLP();
 
-        uint32_t baud = (uint32_t)ACM_line_coding[0] | (uint32_t)ACM_line_coding[1]<<8;
-        baud |= (uint32_t)ACM_line_coding[2]<<16 | (uint32_t)ACM_line_coding[3]<<24;
-
-        if ( baud == 1200 ){
-          uint16_t *addr = (uint16_t*)0x0800;
-
-          *(addr) = 0x7777; // Key to bootloader
-
-          wdt_enable(WDTO_15MS);
-          for(;;){}
-        }
-
-        break;
-        default:
-        CLRBM(UEINTX, (1 << RXOUTI) | (1 << FIFOCON)); // Handshake and STALL
-        SET(UECONX, STALLRQ);
-        break;
-    }
-  }
-  #else 
   if ( GET(UEINTX, RXOUTI) ){ // Since we only accept ONE request with a data field:
     uint32_t baud = ((uint32_t)UEDATX);
     baud |= ((uint32_t)UEDATX<<8);
@@ -304,8 +291,7 @@ ISR(USB_COM_vect){
       for(;;){}
     }
   }
-  #endif
-
+  UENUM = prev_UENUM;
 }
 
 inline void PLL_init(void){
@@ -330,7 +316,7 @@ inline void USB_init(void){
 
   CLR(UDCON, DETACH);
   
-  UDIEN = (1<<EORSTE); // Only Interrupt we need
+  UDIEN = (1<<EORSTE)|(1<<SUSPE); // Only Interrupt we need
   return;
 }
 
@@ -340,37 +326,40 @@ void USB_ZLP(void){
   return;
 }
 
-void ACM_puts(char *str){
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
-    UENUM = 2; // Bulk IN
-    if( GET(UEINTX, TXINI) && str != NULL ){
-      while ( (*str) && GET(UEINTX, RWAL) ){ // deliberately limited to 64B endpoint limit
-        UEDATX = *(str++);
-      }
-      if( !GET(UEINTX, RWAL) && !(*str) ){ // Buffer = wMaxPacketSize -- TX a ZLP to confirm
-        CLRBM(UEINTX, (1<<TXINI)|(1<<FIFOCON) ); // Done TX -- This should TX and flush the buffer so the next packet is a ZLP
-        while ( !GET(UEINTX, TXINI) ){}
-      }
-      CLRBM(UEINTX, (1<<TXINI)|(1<<FIFOCON) ); // Done TX
+void ACM_puts(const char __memx *str){
+  if ( str==NULL ) { return; }
+
+  UENUM = 2; // Bulk IN
+  while ( !GET(UEINTX, TXINI) && (ACM_line.state & 0x01) ){} // await before atomic section
+
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE){ // write and TX atomically
+    while ( (*str) && GET(UEINTX, RWAL) ){ // deliberately limited to 64B endpoint limit
+      UEDATX = *(str++);
     }
+    
+    if( !GET(UEINTX, RWAL) && !(*str) ){ // Buffer = wMaxPacketSize -- TX a ZLP to confirm
+      CLRBM(UEINTX, (1<<TXINI)|(1<<FIFOCON) ); // Done TX -- This should TX and flush the buffer so the next packet is a ZLP
+      while ( !GET(UEINTX, TXINI) ){}
+    }
+    CLRBM(UEINTX, (1<<TXINI)|(1<<FIFOCON) ); // Done TX
   }
   return;
 }
 
 void ACM_putc(const char c){
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
-    UENUM = 2; // Bulk IN
-
-    if( GET(UEINTX, TXINI) ){
-      UEDATX = c;
-      CLRBM(UEINTX, (1<<TXINI)|(1<<FIFOCON) ); // Done TX
-    }
+  UENUM = 2; // Bulk IN
+  while ( !GET(UEINTX, TXINI) && (ACM_line.state & 0x01) ){} // await before atomic section
+  // if the line state suddenly drops, we can handle the interrupt and subsequently leave the subroutine
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE){ // write and TX atomically
+    UEDATX = c;
+    CLRBM(UEINTX, (1<<TXINI)|(1<<FIFOCON) ); // Done TX
   }
+
   return;
 }
 
-int8_t ACM_available(void){
-  int8_t count;
+uint8_t ACM_available(void){
+  uint8_t count;
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
     UENUM = 3;
     count = UEBCLX;
@@ -381,7 +370,7 @@ int8_t ACM_available(void){
 char ACM_getc(void){
   char c = '\0';
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
-    UENUM = 3; // Bulk OUT
+  UENUM = 3; // Bulk OUT
     if ( GET(UEINTX, RXOUTI) ){;
       c = UEDATX;
       if ( !UEBCLX ){

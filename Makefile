@@ -5,23 +5,23 @@ FLASH_BAUD = 1200
 # Frequencies in Hz
 CFLAGS = -std=gnu23 -mmcu=$(MMCU) -Wall -Oz -DF_CPU=$(FREQ)
 CC = avr-gcc
-DEPS = lib/%.h hibiscus/hibiscus.h hedera/hedera.h
-OBJ = obj/hibiscus.o obj/hedera.o
+DEPS = lib/%.h hibiscus/hibiscus.h
+OBJ = obj/hibiscus.o
 
 PORT=/dev/ttyACM0
 
 .PHONY: clean all flash
 
-obj/hibiscus.o: ./hibiscus/hibiscus.c $(DEPS)
-	$(CC) $(CFLAGS) -DF_OSC=$(XTAL) -DFLASH_BAUD=$(FLASH_BAUD)U -o $@ -c $<
+obj/hibiscus.o: ./hibiscus/hibiscus.c 
+	$(CC) $(CFLAGS) -DF_OSC=$(XTAL) -DFLASH_BAUD=$(FLASH_BAUD)UL -o $@ -c $<
 
-obj/hedera.o: ./hedera/hedera.c $(DEPS)
+obj/hedera.o: ./hedera/hedera.c
 	$(CC) $(CFLAGS) -o $@ -c $<
 
-obj/%.o: ./lib/%.c $(DEPS)
+obj/%.o: ./lib/%.c
 	$(CC) $(CFLAGS) -o $@ -c $<
 
-obj/main.o: ./main.c
+obj/main.o: ./main.c $(OBJ)
 	$(CC) $(CFLAGS) -o $@ -c $<
 
 obj/main.elf: $(OBJ) ./obj/main.o 
