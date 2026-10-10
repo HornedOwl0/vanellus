@@ -10,23 +10,14 @@
 #include <util/atomic.h>
 
 #include "hibiscus/hibiscus.h"
-#include "hedera/hedera.h"
 #include "lib/macros.h"
 
-#define SERVO_BRAD(x) ( SERVO_MIN_US + (x*(SERVO_RANGE>>7)) )
-
 void SETCLK(void) __attribute__((naked)) __attribute__((section(".init3")));
-
-struct mntlst servo_OCRA_mnt[4] = {
-  {&PORTE, PE6, SERVO_BRAD(96)},
-};
 
 int main(void){
 	cli(); _delay_ms(5); /* Begin Setup - no interrupts */
   
   ACM_init();
-  servo_init();
-  SET(DDRE, PE6);
 
   SET(DDRD, PD5);
   SET(DDRB, PB0);
@@ -42,7 +33,7 @@ int main(void){
     wdt_reset();
     _delay_ms(100);
     SET(PINB, PB0);
-    if ( ACM_available() ){
+    if (ACM_available()){
       ACM_gets(buf, ARRAY_SIZE(buf));
       ACM_puts(buf);
     }

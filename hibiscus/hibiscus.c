@@ -97,7 +97,7 @@ inline void USB_EP0_init(void){
   UECFG0X = (0x00<<EPTYPE0)|(0<<EPDIR); // OUT
   UECFG1X = (0x03<<EPSIZE0)|(0x00<<EPBK0)|(1<<ALLOC);
   
-  UEIENX = (1<<RXSTPE)|(1<<RXOUTE); // The ONLY interrupt we need.
+  UEIENX = (1<<RXSTPE)|(1<<RXOUTE); // The ONLY interrupts we need.
 }
 
 static void USB_EP0_disable(void);
@@ -161,7 +161,6 @@ static void USB_HANDLE_GET_DESCRIPTOR(uint16_t wValue, uint16_t wLength){
 }
 
 ISR(USB_GEN_vect){
-  uint8_t prev_UENUM = UENUM;
   if ( GET(UDINT, EORSTI) ){
     CLR(UDINT, EORSTI);
     
@@ -171,11 +170,11 @@ ISR(USB_GEN_vect){
   if ( GET(UDINT, SUSPI) ){
     CLR(UDINT, SUSPI);
     
-    USB_EP0_disable();
-    ACM_EPN_disable();
     ACM_line.state = 0x00;
+
+    UERST |= (0x0E<<EPRST0); // Reset FIFO for EP1-EP2-EP3
+    UERST &= ~(0x0E<<EPRST0); 
   } 
-  UENUM = prev_UENUM;
 }
 
 ISR(USB_COM_vect){
@@ -202,6 +201,7 @@ ISR(USB_COM_vect){
     (void)wLength;
 
     CLR(UEINTX, RXSTPI);
+
     
     switch (bRequest) {
       case USBSTDREQ_GET_STATUS:
@@ -249,13 +249,14 @@ ISR(USB_COM_vect){
         break;
 
       case ACMSTDREQ_GET_LINE_CODING: // Return Current CFG
-        { // Scope GET_LINE_CODING
+        if (wLength!=7){ SET(UECONX, STALLRQ); }
+
         while ( !GET(UEINTX, TXINI) ){}
-        for (int8_t i=0; i<MIN(ARRAY_SIZE(ACM_line.coding), wLength); i++){
+        for (int8_t i=0; i<ARRAY_SIZE(ACM_line.coding); i++){
           UEDATX = ACM_line.coding[i];
         }
         CLRBM(UEINTX, (1<<TXINI)|(1<<FIFOCON));
-        } // Scope GET_LINE_CODING
+
         break; 
 
       case ACMSTDREQ_SET_CONTROL_LINE_STATE: // just acknowledge the packet.
@@ -275,12 +276,17 @@ ISR(USB_COM_vect){
   }
 
   if ( GET(UEINTX, RXOUTI) ){ // Since we only accept ONE request with a data field:
-    uint32_t baud = ((uint32_t)UEDATX);
-    baud |= ((uint32_t)UEDATX<<8);
-    baud |= ((uint32_t)UEDATX<<16);
-    baud |= ((uint32_t)UEDATX<<24);
-    CLRBM(UEINTX, (1 << RXOUTI) | (1 << FIFOCON)); // Handshake and ACK
+    while ( !GET(UEINTX, TXINI) ){}
+    for (int8_t i=0; i<ARRAY_SIZE(ACM_line.coding); i++){
+      ACM_line.coding[i] = UEDATX;
+    }
+    CLRBM(UEINTX, (1<<RXOUTI)|(1<<FIFOCON));
     USB_ZLP();
+
+    uint32_t baud = ((uint32_t)ACM_line.coding[0]);
+    baud |= ((uint32_t)ACM_line.coding[1] << 8);
+    baud |= ((uint32_t)ACM_line.coding[2] << 16);
+    baud |= ((uint32_t)ACM_line.coding[3] << 24);
 
     if ( baud == FLASH_BAUD ){
       uint16_t *addr = (uint16_t*)0x0800;
@@ -304,6 +310,7 @@ inline void PLL_init(void){
     #error "(Hibiscus) F_OSC (XTAL) not defined/unsupported! Try 16/8MHz"
   #endif /* F_OSC */
   while( !(PLLCSR & (1<<PLOCK)) ){}
+
   return;
 }
 
@@ -326,39 +333,47 @@ void USB_ZLP(void){
   return;
 }
 
-void ACM_puts(const char __memx *str){
-  if ( str==NULL ) { return; }
+void ACM_puts(const __memx char *str){
+  if ( str==NULL || !(ACM_line.state & 0x01) ) { return; }
 
   UENUM = 2; // Bulk IN
-  while ( !GET(UEINTX, TXINI) && (ACM_line.state & 0x01) ){} // await before atomic section
+  while ( !GET(UEINTX, TXINI) ){} // await before atomic section
+  /* SUSPI will immediately set the TXINI flag, no matter what, while also clearing the line state */
+  if ( !(ACM_line.state & 0x01) ) { return; }
 
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE){ // write and TX atomically
     while ( (*str) && GET(UEINTX, RWAL) ){ // deliberately limited to 64B endpoint limit
       UEDATX = *(str++);
     }
-    
     if( !GET(UEINTX, RWAL) && !(*str) ){ // Buffer = wMaxPacketSize -- TX a ZLP to confirm
       CLRBM(UEINTX, (1<<TXINI)|(1<<FIFOCON) ); // Done TX -- This should TX and flush the buffer so the next packet is a ZLP
-      while ( !GET(UEINTX, TXINI) ){}
     }
-    CLRBM(UEINTX, (1<<TXINI)|(1<<FIFOCON) ); // Done TX
   }
+
+  while ( !GET(UEINTX, TXINI) ){} // await outside of atomic section
+  if ( !(ACM_line.state & 0x01) ) { return; }
+
+  CLRBM(UEINTX, (1<<TXINI)|(1<<FIFOCON) ); // Done TX
+
   return;
 }
 
 void ACM_putc(const char c){
+  if ( !(ACM_line.state & 0x01) ) { return; }
+
   UENUM = 2; // Bulk IN
-  while ( !GET(UEINTX, TXINI) && (ACM_line.state & 0x01) ){} // await before atomic section
-  // if the line state suddenly drops, we can handle the interrupt and subsequently leave the subroutine
+  while ( !GET(UEINTX, TXINI) ){} // await before atomic section
+  if ( !(ACM_line.state & 0x01) ) { return; }
+
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE){ // write and TX atomically
     UEDATX = c;
     CLRBM(UEINTX, (1<<TXINI)|(1<<FIFOCON) ); // Done TX
   }
-
   return;
 }
 
 uint8_t ACM_available(void){
+  if ( !(ACM_line.state & 0x02) ) { return 0; }
   uint8_t count;
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
     UENUM = 3;
@@ -368,9 +383,10 @@ uint8_t ACM_available(void){
 }
 
 char ACM_getc(void){
+  if ( !(ACM_line.state & 0x02) ) { return 0; }
   char c = '\0';
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
-  UENUM = 3; // Bulk OUT
+    UENUM = 3; // Bulk OUT
     if ( GET(UEINTX, RXOUTI) ){;
       c = UEDATX;
       if ( !UEBCLX ){
@@ -382,6 +398,8 @@ char ACM_getc(void){
 }
 
 void ACM_gets(char *ptr, uint8_t n){
+  if ( !(ACM_line.state & 0x02) ) { return; }
+
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
     UENUM = 3; // Bulk OUT
 
@@ -395,5 +413,6 @@ void ACM_gets(char *ptr, uint8_t n){
       }
     }
   }
+
   return;
 }
