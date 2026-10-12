@@ -16,6 +16,11 @@ struct mntlst{
 	volatile uint16_t micros:12;
 };
 
+/* List per channel */
+extern struct servo_mnt servo_OCRA_mnt[4] __attribute__((weak));
+extern struct servo_mnt servo_OCRB_mnt[4] __attribute__((weak));
+extern struct servo_mnt servo_OCRC_mnt[4] __attribute__((weak));
+
 /* Starts TC3 and interrupts */
 void servo_init(void);
 

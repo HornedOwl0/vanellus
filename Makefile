@@ -6,7 +6,7 @@ FLASH_BAUD = 1200
 CFLAGS = -std=gnu23 -mmcu=$(MMCU) -Wall -Oz -DF_CPU=$(FREQ)
 CC = avr-gcc
 DEPS = lib/%.h hibiscus/hibiscus.h
-OBJ = obj/hibiscus.o
+OBJ = obj/hibiscus.o obj/hyacinthus.o obj/helianthus.o
 
 PORT=/dev/ttyACM0
 
@@ -14,6 +14,12 @@ PORT=/dev/ttyACM0
 
 obj/hibiscus.o: ./hibiscus/hibiscus.c 
 	$(CC) $(CFLAGS) -DF_OSC=$(XTAL) -DFLASH_BAUD=$(FLASH_BAUD)UL -o $@ -c $<
+
+obj/hyacinthus.o: ./hyacinthus/hyacinthus.c
+	$(CC) $(CFLAGS) -o $@ -c $<
+
+obj/helianthus.o: ./helianthus/helianthus.c
+	$(CC) $(CFLAGS) -o $@ -c $<
 
 obj/hedera.o: ./hedera/hedera.c
 	$(CC) $(CFLAGS) -o $@ -c $<

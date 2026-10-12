@@ -29,11 +29,27 @@
 
 /* End Macros */
 
+/* USB Standard Request Codes */
+
+#define USBSTDREQ_GET_STATUS (0x00)
+#define USBSTDREQ_SET_ADDRESS (0x05)
+#define USBSTDREQ_GET_DESCRIPTOR (0x06)
+#define USBSTDREQ_SET_CONFIGURATION (0x09)    
+
+/* CDC ACM Standard Request Codes */
+
+#define ACMSTDREQ_SET_LINE_CODING (0x20)
+#define ACMSTDREQ_GET_LINE_CODING (0x21)
+#define ACMSTDREQ_SET_CONTROL_LINE_STATE (0x22)
+#define ACMSTDREQ_SEND_BREAK (0x23)
+
+/* End USBSTDREQ-ACMSTDREQ */
+
 #include "hibiscus.h"
 #include "descriptors.h"
 
 #ifndef FLASH_BAUD
-  #define FLASH_BAUD 1200U
+  #define FLASH_BAUD 1200UL
 #endif /* FLASH_BAUD */ 
 
 /* Runtime Variables */
@@ -53,7 +69,8 @@ static struct __attribute__((packed)){
 
 /* Useful Functions */
 
-static void ACM_EPN_disable(void){
+static void ACM_EPN_disable(void);
+inline void ACM_EPN_disable(void){
   UENUM = 1; CLR(UECONX, EPEN);
   UENUM = 2; CLR(UECONX, EPEN);
   UENUM = 3; CLR(UECONX, EPEN);
@@ -62,7 +79,8 @@ static void ACM_EPN_disable(void){
   UERST &= ~(0x0E<<EPRST0); 
 }
 
-static void ACM_EPN_init(void){
+static void ACM_EPN_init(void);
+inline void ACM_EPN_init(void){
   UERST |= (0x0E<<EPRST0); // Reset FIFO for EP1-EP2-EP3
   UERST &= ~(0x0E<<EPRST0); 
 
@@ -98,14 +116,6 @@ inline void USB_EP0_init(void){
   UECFG1X = (0x03<<EPSIZE0)|(0x00<<EPBK0)|(1<<ALLOC);
   
   UEIENX = (1<<RXSTPE)|(1<<RXOUTE); // The ONLY interrupts we need.
-}
-
-static void USB_EP0_disable(void);
-inline void USB_EP0_disable(void){
-  UENUM = 0; CLR(UECONX, EPEN);
-
-  SET(UERST, EPRST0);  // Reset FIFO Buffer for EP0
-  CLR(UERST, EPRST0);  // Complete the Reset Operation
 }
 
 static void USB_HANDLE_GET_DESCRIPTOR(uint16_t wValue, uint16_t wLength){
@@ -249,7 +259,7 @@ ISR(USB_COM_vect){
         break;
 
       case ACMSTDREQ_GET_LINE_CODING: // Return Current CFG
-        if (wLength!=7){ SET(UECONX, STALLRQ); }
+        if (wLength!=7){ SET(UECONX, STALLRQ); break; }
 
         while ( !GET(UEINTX, TXINI) ){}
         for (int8_t i=0; i<ARRAY_SIZE(ACM_line.coding); i++){

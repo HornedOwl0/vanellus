@@ -35,11 +35,6 @@
   #error "(Hedera) F_CPU undefined/unsupported! Try 16/8/1MHz"
 #endif
 
-/* List per channel */
-extern struct mntlst servo_OCRA_mnt[4] __attribute__((weak));
-extern struct mntlst servo_OCRB_mnt[4] __attribute__((weak));
-extern struct mntlst servo_OCRC_mnt[4] __attribute__((weak));
-
 /* Init function */
 inline void servo_init(void){
 	/* TC3 Setup - set registers */

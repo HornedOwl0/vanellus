@@ -5,6 +5,8 @@
 
 #define MIN(a,b) ( (a) < (b) ? (a) : (b) )
 
+#define CLAMP(x,a,b) ( (x)<(a) ? (a) : ( (x)>(b) ? (b) : (x) ) )
+
 #define SET(REG, POS) (REG |= (1<<POS))
 #define CLR(REG, POS) (REG &= ~(1<<POS))
 #define TOG(REG, POS) (REG ^= (1<<POS))
