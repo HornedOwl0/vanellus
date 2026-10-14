@@ -12,99 +12,95 @@
 #include <util/atomic.h>
 
 #include "hibiscus/hibiscus.h"
-#include "hyacinthus/hyacinthus.h"
+#include "helianthus/helianthus.h"
+#include "hydrangea/hydrangea.h"
 
 #include "lib/macros.h"
 
 #define TC4_WRITE(reg, val) ({ TC4H=MSB(val); reg=LSB(val); })
 #define TC4_READ(reg, var) ({ var = reg; var |= (uint16_t)(TC4H<<8) })
 
-#define SENSOR_THRESHOLD (820U)
-#define SENSOR_DUTY (384U)
+#define SENSOR_THRESHOLD (915U)
+#define SENSOR_DUTY (192U)
+#define INVERTED_PWM // Undefine this for CD4011 Later
 
-static const float Kp = 15.0f;
-  static const float Ki = 4.0f;
-static const float Kd = 0.0f;
+static const float Kp = 5.0f;
+static const float Ki = 0.2f;
+static const float Kd = 1.0f;
 
 static float error = 0.0f;
 static float prev_error = 0.0f;
 static float sum_error = 0.0f;
 
-static float pidOut = 0.0f;
+static float pid_out = 0.0f;
 
 static int8_t weights[] = {-2, -1, 0, 1, 2};
 
-/* Helianthus */
-#include "helianthus/helianthus.h"
-struct ADC_mnt ADC_lst[] = {
-  {.ADCn = 4},
-  {.ADCn = 5},
-  {.ADCn = 8},
-  {.ADCn = 6},
-  {.ADCn = 7},
-};
-size_t ADC_count = ARRAY_SIZE(ADC_lst);
-/* Helianthus */
-
 void TC4_init(void);
+
 void blink(void);
-void raw_ADC(void);
 void calc_PID(void);
+void motor_ctrl(void);
+
+/* ptr, interval, offset */
+static struct htask task_lst[] = {
+  TASK_DEF(&blink, 100, 0),
+  TASK_DEF(&calc_PID, 1, 35),
+  TASK_DEF(&motor_ctrl, 10, 65),
+};
 
 /* Main Section */
-void init(){
-  ACM_init();
-  TC4_init(); // Provides PWM for the sensor, and the motors
-  ADC_init();
-  ADCSRB |= (1<<ADHSM);
+int main(void){
+  cli(); _delay_ms(5);
+
+  ACM_init(); // Starts PLL too!
+  ADC_init(); // Starts ISR for sensor readings -> Read values atomically please
+  TC4_init(); // Provides PWM (PFCPWM) for the sensor, and the motors
 
   SET(DDRD, PD5);
   SET(DDRB, PB0);
   CLR(PORTD, PD5);
 
   wdt_enable(WDTO_2S);
+
+  hydrangea_init(); sei();
+
+  for(;;){
+    wdt_reset();
+    hydrangea_run(task_lst, ARRAY_SIZE(task_lst));
+  }
   
-  return;
+  return 0;
 }
 
-/* ptr, interval, offset */
-struct task_mnt task_lst[] = {
-  TASK_DEF(&blink, 100, 0),
-  TASK_DEF(&raw_ADC, 1000, 20),
-  TASK_DEF(&calc_PID, 10, 40),
-};
-size_t task_count = ARRAY_SIZE(task_lst);
-/* Function Definitions */
+/* Helianthus */
+struct ADC_mnt ADC_lst[] = {
+  {.ADCn = 4},
+  {.ADCn = 5},
+  {.ADCn = 8},
+  {.ADCn = 6},
+  {.ADCn = 7},
+}; uint8_t ADC_count = ARRAY_SIZE(ADC_lst);
 
+/* Function Definitions */
 void blink(void){
-  wdt_reset();
   SET(PINB, PB0);
 };
 
-void raw_ADC(void){
-  static char buf[56];
-
-  memset(buf, '\0', ARRAY_SIZE(buf));
-  char temp_buf[8];
-  for (int8_t i=0; i<ARRAY_SIZE(ADC_lst); i++){
-    itoa(ADC_lst[i].val, temp_buf, 10);
-    strcat(buf, temp_buf);
-    strcat(buf, (const __memx char*)", ");
-  }
-  strcat(buf, (const __memx char*)"\r\n");
-  ACM_puts(buf);
-}
-
 void calc_PID(void){
-  static char buf[8];
+  static char buf[56];
+  char temp_buf[8];
 
   memset(buf, '\0', ARRAY_SIZE(buf));
-
 
   float sum = 0; // Weighted Sum
   float div = 0; // Count
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
     for (int8_t i=0; i<ARRAY_SIZE(ADC_lst); i++){
+      itoa(ADC_lst[i].val, temp_buf, 10);
+      strcat(buf, temp_buf);
+      strcat(buf, (const __memx char*)", ");
+
       div += !!(ADC_lst[i].val>SENSOR_THRESHOLD);
       sum += (int8_t)( (ADC_lst[i].val>SENSOR_THRESHOLD) * weights[i] );
     }
@@ -113,17 +109,18 @@ void calc_PID(void){
 
   if ( x==x ){
     prev_error = error;
-    error = sum/div;
-    sum_error += error;
+    error = x;
+    sum_error = CLAMP((sum_error+error),-255, +255);
   }
 
   float derivative = error-prev_error;
   float integral = sum_error;
   float proportional = error;
 
-  pidOut = (Kp*proportional) + (Ki*integral) + (Kd*derivative);
+  pid_out = (Kp*proportional) + (Ki*integral) + (Kd*derivative);
 
-  dtostrf(pidOut, 0, 2, buf);
+  dtostrf(pid_out, 0, 2, temp_buf);
+  strcat(buf, temp_buf);
   strcat(buf, (const __memx char*)"\r\n");
   ACM_puts(buf);
 
@@ -131,11 +128,11 @@ void calc_PID(void){
 }
 
 void motor_ctrl(){
-  static uint16_t lspd = 0;
-  static uint16_t rspd = 0;
+  static int16_t lspd = 0;
+  static int16_t rspd = 0;
 
-  lspd = 384 - (uint16_t)pidOut;
-  rspd = 384 + (uint16_t)pidOut;
+  lspd = 384 - (int16_t)pid_out;
+  rspd = 384 + (int16_t)pid_out;
 
   TC4_WRITE(OCR4A, CLAMP(lspd, 0, 768));
   TC4_WRITE(OCR4B, CLAMP(rspd, 0, 768));
@@ -145,6 +142,13 @@ void TC4_init(void){
   /* TC4 Setup - set registers */
 
   TCCR4A = (1<<PWM4A)|(1<<PWM4B);
+
+  #ifdef INVERTED_PWM
+  TCCR4B = (1<<PWM4X)|(1<<PSR4);
+  #else
+  TCCR4B = (0<<PWM4X)|(1<<PSR4);
+  #endif
+
   TCCR4B = (1<<PWM4X)|(1<<PSR4);
   TCCR4C = (1<<COM4A0S)|(1<<COM4B0S)|(1<<COM4D0)|(1<<PWM4D); // Write to the shadows instead of TCCR4A
   TCCR4D = (0x01<<WGM40); // Phase and Frequency Correct Mode means halving the frequency calculation/halving the prescaler
@@ -155,16 +159,21 @@ void TC4_init(void){
   /* Push the prescaler */
   /* Remember hibiscus.h starts the PLL@96MHz with postcaler 1.5 for 64MHz */
 
-  TCCR4B |= (0x0A<<CS40); // PCK/2^(N-1)
-  /* Fast PWM -- 64MHz/4096 (0Bh) = 15.625kHz */ 
-  /* PFCPWM -- 64MHz/2048 (0Ah) = 31.250 kHz (Dual Slope) */ 
+  TCCR4B |= (0x02<<CS40); // PCK/2^(N-1)
+  /* Fast PWM -- 64MHz/4*1024 (03h) = 15.625kHz */ 
+  /* PFCPWM -- 64MHz/2*1024 (02h) = 31.250 kHz (Dual Slope -> 15.625kHz) */ 
   /* 1024 steps -> 15.625 <=> 768 steps -> 20.833kHz -- IDEAL */
   
   TC4_WRITE(OCR4C, 768); // TOP
   
   TC4_WRITE(OCR4A, 384);
   TC4_WRITE(OCR4B, 384);
+
+  #ifdef INVERTED_PWM
   TC4_WRITE(OCR4D, CLAMP((768-SENSOR_DUTY), 0, 768));
+  #else
+  TC4_WRITE(OCR4D, CLAMP(SENSOR_DUTY, 0, 768));
+  #endif
 
   DDRC |= (1<<PC6)|(1<<PC7);
   DDRB |= (1<<PB5)|(1<<PB6);
