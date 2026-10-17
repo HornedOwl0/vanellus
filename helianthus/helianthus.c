@@ -31,7 +31,7 @@ ISR(ADC_vect){
   }
 }
 
-inline void ADC_init(void){
+static inline void __attribute__((constructor)) ADC_init(){
   if (ADC_lst != NULL){
     ADCSRA = (1<<ADEN)|(0x7<<ADPS0)|(1<<ADIE);
     ADCSRB = 0x00;

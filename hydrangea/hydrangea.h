@@ -11,9 +11,7 @@ struct htask {
 	const uint16_t interval_ms;
 };
 
-void hydrangea_init(void);
-
-void hydrangea_run(struct htask arr[], uint8_t count);
+void task_run(struct htask arr[], uint8_t count);
 
 uint16_t hydrangea_tick(void);
 

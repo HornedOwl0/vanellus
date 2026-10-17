@@ -6,6 +6,7 @@
 #include <avr/wdt.h>
 
 #include <util/atomic.h>
+#include <util/delay.h>
 
 /* Useful Macros */
 
@@ -117,6 +118,13 @@ inline void USB_EP0_init(void){
   
   UEIENX = (1<<RXSTPE)|(1<<RXOUTE); // The ONLY interrupts we need.
 }
+
+static void USB_ZLP(void){
+  while ( !GET(UEINTX, TXINI) ){}
+  CLRBM(UEINTX, (1<<TXINI)|(1<<FIFOCON) );
+  return;
+}
+
 
 static void USB_HANDLE_GET_DESCRIPTOR(uint16_t wValue, uint16_t wLength){
   const __flash uint8_t *ptr = NULL;
@@ -310,39 +318,6 @@ ISR(USB_COM_vect){
   UENUM = prev_UENUM;
 }
 
-inline void PLL_init(void){
-  PLLFRQ = (1<<PLLUSB)|(0x0A<<PDIV0)|(0x02<<PLLTM0);
-  #if (F_OSC==16000000UL)
-    PLLCSR = (1<<PINDIV)|(1<<PLLE);
-  #elif (F_OSC==8000000UL)
-    PLLCSR = (0<<PINDIV)|(1<<PLLE);
-  #else
-    #error "(Hibiscus) F_OSC (XTAL) not defined/unsupported! Try 16/8MHz"
-  #endif /* F_OSC */
-  while( !(PLLCSR & (1<<PLOCK)) ){}
-
-  return;
-}
-
-inline void USB_init(void){
-  SET(UHWCON, UVREGE);
-  SET(USBCON, USBE);
-
-  SET(USBCON, OTGPADE);
-  CLR(USBCON, FRZCLK);
-
-  CLR(UDCON, DETACH);
-  
-  UDIEN = (1<<EORSTE)|(1<<SUSPE); // Only Interrupt we need
-  return;
-}
-
-void USB_ZLP(void){
-  while ( !GET(UEINTX, TXINI) ){}
-  CLRBM(UEINTX, (1<<TXINI)|(1<<FIFOCON) );
-  return;
-}
-
 void ACM_puts(const __memx char *str){
   if ( str==NULL || !(ACM_line.state & 0x01) ) { return; }
 
@@ -424,5 +399,32 @@ void ACM_gets(char *ptr, uint8_t n){
     }
   }
 
+  return;
+}
+
+static inline void __attribute__((constructor)) ACM_init(){
+  /* delay to allow bootloader disconnect */
+  _delay_ms(5);
+  /* PLL_init() -> Starts PLL @96MHz (Postcaler Div 2 for USB, Div 1.5 for TC4 - Ideal according to specification) */
+  PLLFRQ = (1<<PLLUSB)|(0x0A<<PDIV0)|(0x02<<PLLTM0);
+  #if (F_OSC==16000000UL)
+    PLLCSR = (1<<PINDIV)|(1<<PLLE);
+  #elif (F_OSC==8000000UL)
+    PLLCSR = (0<<PINDIV)|(1<<PLLE);
+  #else
+    #error "(Hibiscus) F_OSC (XTAL) not defined/unsupported! Try 16/8MHz"
+  #endif /* F_OSC */
+  while( !(PLLCSR & (1<<PLOCK)) ){}
+  /* USB_init() -> Starts USB peripheral and interrupts */
+  SET(UHWCON, UVREGE);
+  SET(USBCON, USBE);
+
+  SET(USBCON, OTGPADE);
+  CLR(USBCON, FRZCLK);
+
+  CLR(UDCON, DETACH);
+  
+  UDIEN = (1<<EORSTE)|(1<<SUSPE); // only interrupts we need
+  /* exit */
   return;
 }

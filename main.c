@@ -20,58 +20,11 @@
 #define TC4_WRITE(reg, val) ({ TC4H=MSB(val); reg=LSB(val); })
 #define TC4_READ(reg, var) ({ var = reg; var |= (uint16_t)(TC4H<<8) })
 
-#define SENSOR_THRESHOLD (915U)
-#define SENSOR_DUTY (192U)
-#define INVERTED_PWM // Undefine this for CD4011 Later
+#define MOTOR_SPD_DEFAULT ( 432U )
 
-static const float Kp = 5.0f;
-static const float Ki = 0.2f;
-static const float Kd = 1.0f;
-
-static float error = 0.0f;
-static float prev_error = 0.0f;
-static float sum_error = 0.0f;
-
-static float pid_out = 0.0f;
-
-static int8_t weights[] = {-2, -1, 0, 1, 2};
-
-void TC4_init(void);
-
-void blink(void);
-void calc_PID(void);
-void motor_ctrl(void);
-
-/* ptr, interval, offset */
-static struct htask task_lst[] = {
-  TASK_DEF(&blink, 100, 0),
-  TASK_DEF(&calc_PID, 1, 35),
-  TASK_DEF(&motor_ctrl, 10, 65),
-};
-
-/* Main Section */
-int main(void){
-  cli(); _delay_ms(5);
-
-  ACM_init(); // Starts PLL too!
-  ADC_init(); // Starts ISR for sensor readings -> Read values atomically please
-  TC4_init(); // Provides PWM (PFCPWM) for the sensor, and the motors
-
-  SET(DDRD, PD5);
-  SET(DDRB, PB0);
-  CLR(PORTD, PD5);
-
-  wdt_enable(WDTO_2S);
-
-  hydrangea_init(); sei();
-
-  for(;;){
-    wdt_reset();
-    hydrangea_run(task_lst, ARRAY_SIZE(task_lst));
-  }
-  
-  return 0;
-}
+#define SENSOR_THRESHOLD (750U)
+#define SENSOR_DUTY (384U)
+// #define INVERTED_PWM // Undefine this for CD4011 Later
 
 /* Helianthus */
 struct ADC_mnt ADC_lst[] = {
@@ -82,14 +35,75 @@ struct ADC_mnt ADC_lst[] = {
   {.ADCn = 7},
 }; uint8_t ADC_count = ARRAY_SIZE(ADC_lst);
 
+/* Global Static Allocation */
+static const float Kp = 50.0f;
+static const float Ki = 0.2f;
+static const float Kd = 1.0f;
+
+static float error = 0.0f;
+static float prev_error = 0.0f;
+static float sum_error = 0.0f;
+
+static float pid_out = 0.0f;
+
+static int8_t weights[] = {2, 1, 0, -1, -2};
+
+/* Function Prototypes */
+
+void blink(void);
+void calc_PID(void);
+void motor_ctrl(void);
+
+/* Hydrangea -> ptr, interval, offset */
+static struct htask task_lst[] = {
+  TASK_DEF(&blink, 100, 0),
+  TASK_DEF(&calc_PID, 1, 35),
+  TASK_DEF(&motor_ctrl, 10, 65),
+};
+
+/* Main Section */
+int main(void){
+  cli();
+
+  // ACM_init() -> Hibiscus: Starts PLL too!
+  // ADC_init() -> Helianthus: Very fast ISR, read values atomically please
+  // TC4_init() -> Provides PWM (PFCPWM) for the sensor, and the motors
+
+  SET(DDRD, PD5); // static
+  SET(DDRB, PB0); // blink
+  CLR(PORTD, PD5);
+
+  SET(DDRB, PB3); // static
+  SET(DDRB, PB2); // static
+  SET(DDRB, PB4); // static
+  SET(DDRE, PE6); // static
+                 //
+  CLR(PORTE, PE6); // static
+  SET(PORTE, PE6); // static
+  SET(PORTB, PB4); // static
+  SET(PORTB, PB3); // static
+
+  wdt_enable(WDTO_120MS); // Shorter than usual timeout
+
+  sei();
+
+  for(;;){
+    wdt_reset();
+    
+    task_run(task_lst, ARRAY_SIZE(task_lst));
+  }
+  
+  return 0;
+}
+
 /* Function Definitions */
 void blink(void){
   SET(PINB, PB0);
 };
 
 void calc_PID(void){
-  static char buf[56];
-  char temp_buf[8];
+  static char buf[56] = {0};
+  char temp_buf[8] = {0};
 
   memset(buf, '\0', ARRAY_SIZE(buf));
 
@@ -131,16 +145,15 @@ void motor_ctrl(){
   static int16_t lspd = 0;
   static int16_t rspd = 0;
 
-  lspd = 384 - (int16_t)pid_out;
-  rspd = 384 + (int16_t)pid_out;
+  lspd = MOTOR_SPD_DEFAULT - (int16_t)pid_out;
+  rspd = MOTOR_SPD_DEFAULT + (int16_t)pid_out;
 
   TC4_WRITE(OCR4A, CLAMP(lspd, 0, 768));
   TC4_WRITE(OCR4B, CLAMP(rspd, 0, 768));
 }
 
-void TC4_init(void){
+static inline void __attribute__((constructor)) TC4_init(void){
   /* TC4 Setup - set registers */
-
   TCCR4A = (1<<PWM4A)|(1<<PWM4B);
 
   #ifdef INVERTED_PWM
@@ -149,7 +162,6 @@ void TC4_init(void){
   TCCR4B = (0<<PWM4X)|(1<<PSR4);
   #endif
 
-  TCCR4B = (1<<PWM4X)|(1<<PSR4);
   TCCR4C = (1<<COM4A0S)|(1<<COM4B0S)|(1<<COM4D0)|(1<<PWM4D); // Write to the shadows instead of TCCR4A
   TCCR4D = (0x01<<WGM40); // Phase and Frequency Correct Mode means halving the frequency calculation/halving the prescaler
   TCCR4E = 0x00;
@@ -166,8 +178,8 @@ void TC4_init(void){
   
   TC4_WRITE(OCR4C, 768); // TOP
   
-  TC4_WRITE(OCR4A, 384);
-  TC4_WRITE(OCR4B, 384);
+  TC4_WRITE(OCR4A, MOTOR_SPD_DEFAULT);
+  TC4_WRITE(OCR4B, MOTOR_SPD_DEFAULT);
 
   #ifdef INVERTED_PWM
   TC4_WRITE(OCR4D, CLAMP((768-SENSOR_DUTY), 0, 768));

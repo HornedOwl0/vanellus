@@ -1,14 +1,14 @@
 MMCU = atmega32u4
-FREQ = 16000000UL
+FREQ = 8000000UL
 XTAL = 16000000UL
 FLASH_BAUD = 1200
 # Frequencies in Hz
 CFLAGS = -std=gnu23 -mmcu=$(MMCU) -Wall -Oz -DF_CPU=$(FREQ)
 CC = avr-gcc
 DEPS = lib/%.h hibiscus/hibiscus.h
-OBJ = obj/hibiscus.o obj/hydrangea.o obj/helianthus.o
+OBJ = obj/hydrangea.o obj/helianthus.o
 
-PORT=/dev/ttyACM0
+PORT = /dev/ttyACM0
 
 .PHONY: clean all flash
 
@@ -24,13 +24,13 @@ obj/helianthus.o: ./helianthus/helianthus.c
 obj/hedera.o: ./hedera/hedera.c
 	$(CC) $(CFLAGS) -o $@ -c $<
 
-obj/%.o: ./*/%.c
+obj/%.o: ./lib/%.c
 	$(CC) $(CFLAGS) -o $@ -c $<
 
 obj/main.o: ./main.c $(OBJ)
 	$(CC) $(CFLAGS) -o $@ -c $<
 
-obj/main.elf: $(OBJ) ./obj/main.o 
+obj/main.elf: ./obj/main.o ./obj/hibiscus.o $(OBJ)
 	$(CC) $(CFLAGS) -o $@ $^
 	
 file.hex: ./obj/main.elf

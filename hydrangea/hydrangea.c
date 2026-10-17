@@ -31,7 +31,7 @@ ISR(TIMER0_COMPA_vect){
 	volatile_tick_ms_ctu++;
 }
 
-void hydrangea_run(struct htask arr[], uint8_t count){
+void task_run(struct htask arr[], uint8_t count){
   if (arr!=NULL){
     uint16_t now_ms = volatile_tick_ms_ctu;
     for (int8_t i=0; i<count; i++){
@@ -44,7 +44,15 @@ void hydrangea_run(struct htask arr[], uint8_t count){
   return;
 }
 
-inline void hydrangea_init(void){
+uint16_t hydrangea_tick(void){
+  uint16_t buf;
+	ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
+		 buf = volatile_tick_ms_ctu;
+	}
+  return buf;
+}
+
+static inline void __attribute__((constructor)) hydrangea_init(){
   /* OCR0A value to compare to and clear */
   OCR0A = PRELOAD;
   /* Clear Timer on Compare Match (CTC) mode WGM02:0 = 2 */
@@ -56,12 +64,4 @@ inline void hydrangea_init(void){
   /* CLK = F_CPU / 64 (or 8 @ 1MHz) */
   TCCR0B = (PRESCALER<<CS00); // Push the clock for timer startup
 	return;
-}
-
-uint16_t hydrangea_tick(void){
-  uint16_t buf;
-	ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
-		 buf = volatile_tick_ms_ctu;
-	}
-  return buf;
 }
