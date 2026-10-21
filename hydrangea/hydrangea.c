@@ -23,7 +23,7 @@
 		#endif /* Freq 8MHz or 16MHz */ 
 	#endif /* PRESCALER */
 #else
-	#error "F_CPU is undefined for scheduler"
+	#error "(Hydrangea) F_CPU is undefined/unsupported for scheduler"
 #endif
 
 static volatile uint16_t volatile_tick_ms_ctu;

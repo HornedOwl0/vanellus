@@ -5,6 +5,8 @@
 
 #define MIN(a,b) ( (a) < (b) ? (a) : (b) )
 
+#define ABS(x) ( ((x)<(0)) ? (-x) : (x) )
+
 #define CLAMP(x,a,b) ( (x)<(a) ? (a) : ( (x)>(b) ? (b) : (x) ) )
 
 #define SET(REG, POS) (REG |= (1<<POS))

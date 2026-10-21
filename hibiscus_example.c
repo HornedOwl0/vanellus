@@ -15,9 +15,7 @@
 void SETCLK(void) __attribute__((naked)) __attribute__((section(".init3")));
 
 int main(void){
-	cli(); _delay_ms(5); /* Begin Setup - no interrupts */
-  
-  ACM_init();
+	cli(); /* Begin Setup - no interrupts */
 
   SET(DDRD, PD5);
   SET(DDRB, PB0);

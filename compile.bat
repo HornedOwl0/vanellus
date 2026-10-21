@@ -9,9 +9,11 @@
     ..\AVR-GCC\bin\avr-gcc -std=gnu23 -mmcu=atmega32u4 -Wall -Oz -DF_CPU=%FREQ% -DF_OSC=%XTAL% -o .\obj\hibiscus.o -c .\hibiscus\hibiscus.c
 
     :: ..\AVR-GCC\bin\avr-gcc -std=gnu23 -mmcu=atmega32u4 -Wall -Oz -DF_CPU=%FREQ% -o .\obj\hedera.o -c .\hedera\hedera.c
+    ..\AVR-GCC\bin\avr-gcc -std=gnu23 -mmcu=atmega32u4 -Wall -Oz -DF_CPU=%FREQ% -DF_OSC=%XTAL% -o .\obj\helianthus.o -c .\helianthus\helianthus.c
+    ..\AVR-GCC\bin\avr-gcc -std=gnu23 -mmcu=atmega32u4 -Wall -Oz -DF_CPU=%FREQ% -DF_OSC=%XTAL% -o .\obj\hydrangea.o -c .\hydrangea\hydrangea.c
 
     ..\AVR-GCC\bin\avr-gcc -std=gnu23 -mmcu=atmega32u4 -Wall -Oz -DF_CPU=%FREQ% -o .\obj\main.o -c .\main.c
-    ..\AVR-GCC\bin\avr-gcc -std=gnu23 -mmcu=atmega32u4 -Wall -Oz -DF_CPU=%FREQ% -o .\obj\main.elf .\obj\main.o .\obj\hibiscus.o 
+    ..\AVR-GCC\bin\avr-gcc -std=gnu23 -mmcu=atmega32u4 -Wall -Oz -DF_CPU=%FREQ% -o .\obj\main.elf .\obj\main.o .\obj\hibiscus.o .\obj\helianthus.o .\obj\hydrangea.o
     ..\AVR-GCC\bin\avr-objcopy -O ihex .\obj\main.elf file.hex
     ..\AVR-GCC\bin\avr-size -G .\obj\main.elf
 
