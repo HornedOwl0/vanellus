@@ -223,13 +223,6 @@ void sensor_debug(void){
 
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
     for (int8_t i=0; i<SENSOR_COUNT; i++){
-      /*
-      int32_t adj_val = ( (int32_t)(ADC_lst[i].val*(vcc_mv)) )>>12; // div 4096 for convenience
-      ltoa(adj_val, temp_buf, 10);
-      strcat(buf, temp_buf);
-      strcat(buf, (const __memx char*)" | ");
-      */
-
       itoa(ADC_lst[i].val, temp_buf, 10);
       strcat(buf, temp_buf);
       strcat(buf, (const __memx char*)", ");
@@ -261,17 +254,6 @@ void calc_PID(void){
   float div = 0; // Count
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
     for (int8_t i=0; i<SENSOR_COUNT; i++){
-      /*
-      int32_t adj_val = ( (int32_t)(ADC_lst[i].val*(vcc_mv)) )>>12; // div 4096 for convenience
-
-      ltoa(adj_val, temp_buf, 10);
-      strcat(buf, temp_buf);
-      strcat(buf, (const __memx char*)", ");
-      
-      div += !!(adj_val<SENSOR_THRESHOLD);
-      sum += (int8_t)( (adj_val<SENSOR_THRESHOLD) * weights[i] );
-      */
-
       itoa(ADC_lst[i].val, temp_buf, 10);
       strcat(buf, temp_buf);
       strcat(buf, (const __memx char*)", ");
@@ -329,9 +311,10 @@ void motor_ctrl(){
   }
 
   if ( (hydrangea_tick()-stateswap_tick) > MIN_RUNTIME_MS ){
-    if ( (stopcheck&0x1F) || (stopcheck&0x1C) || (stopcheck&0x07) || !(stopcheck) )
-    // these correspond to: all off, all right&centre, all left&centre, all active
-    state = 0;
+    if ( (stopcheck==0x1F) || (stopcheck==0x1C) || (stopcheck==0x07) || (stopcheck==0x00) ){
+      // these correspond to: all off, all right&centre, all left&centre, all active
+      state = 0;
+    }
   }
 
   TC4_WRITE(OCR4A, CLAMP(ABS(lspd), 0, 768));
