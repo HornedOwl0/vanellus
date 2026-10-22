@@ -47,7 +47,7 @@ void task_run(struct htask arr[], uint8_t count){
 uint16_t hydrangea_tick(void){
   uint16_t buf;
 	ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
-		 buf = volatile_tick_ms_ctu;
+		buf = volatile_tick_ms_ctu;
 	}
   return buf;
 }

@@ -11,7 +11,7 @@ static const __flash uint8_t USB_device_descriptor[] = {
   64, // bMaxPacketSize
   LSB(VENDOR_HEX), MSB(VENDOR_HEX), // idVendor
   LSB(PRODUCT_HEX), MSB(PRODUCT_HEX), // idProduct
-  LSB(0x0100), MSB(0x0100), // bcdDevice
+  LSB(0x0017), MSB(0x0017), // bcdDevice
   1,                // iManufacturer
   2,              // iProduct
   0,              // iSerialNumber
