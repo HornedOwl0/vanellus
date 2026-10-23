@@ -20,7 +20,7 @@
 #define TC4_WRITE(reg, val) ({ TC4H=MSB(val); reg=LSB(val); })
 #define TC4_READ(reg, var) ({ var = reg; var |= (uint16_t)(TC4H<<8) })
 
-#define MOTOR_SPD_FORWARD ( 632 )
+#define MOTOR_SPD_FORWARD ( 624 )
 #define MOTOR_SPD_OFFSET_L ( +0 )
 #define MOTOR_SPD_OFFSET_R ( +0 )
 #define MOTOR_SPD_DEAD ( 0 ) // Reverse Threshold
@@ -37,21 +37,11 @@
 #define STP (0x00)
 // reverse both is an impossibility!
 
-#define MIN_RUNTIME_MS ( 1000 )
+#define MIN_RUNTIME_MS ( 3000 )
 #define DEBOUNCE_MS ( 100 )
+#define MAX_BAD_CALCULATIONS ( 240U )
 
 #define INVERTED_PWM
-
-/* Helianthus */
-struct ADC_mnt ADC_lst[] = {
-  {.ADCn = 4}, // Edge Sensor
-  {.ADCn = 5},
-  {.ADCn = 8},
-  {.ADCn = 6},
-  {.ADCn = 7},
-}; int8_t ADC_count = ARRAY_SIZE(ADC_lst);
-
-#define SENSOR_COUNT 5
 
 /* Global Static Allocation */
 static const float Kp = 14.4f;
@@ -64,7 +54,7 @@ static float sum_error = 0.0f;
 
 static float pid_out = 0.0f;
 
-static int8_t weights[SENSOR_COUNT] = {-16, -4, 0, +4, +16};
+static int8_t weights[] = {-12, -8, 0, +8, +12};
 static int8_t state = STATE_DEFAULT;
 static int32_t vcc_mv = 0;
 
@@ -80,6 +70,15 @@ static struct {
   {&DDRB, &PORTB, PB4},
   {&DDRE, &PORTE, PE6},
 };
+
+/* Helianthus */
+struct ADC_mnt ADC_lst[] = {
+  {.ADCn = 4}, // Edge Sensor
+  {.ADCn = 5},
+  {.ADCn = 8},
+  {.ADCn = 6},
+  {.ADCn = 7},
+}; int8_t ADC_count = ARRAY_SIZE(ADC_lst);
 
 /* Task Function Prototypes */
 void blink_stp(void);
@@ -222,7 +221,7 @@ void sensor_debug(void){
   }
 
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
-    for (int8_t i=0; i<SENSOR_COUNT; i++){
+    for (int8_t i=0; i<ADC_count; i++){
       itoa(ADC_lst[i].val, temp_buf, 10);
       strcat(buf, temp_buf);
       strcat(buf, (const __memx char*)", ");
@@ -245,30 +244,54 @@ void sensor_debug(void){
 }
 
 void calc_PID(void){
+  static int16_t timeout = MAX_BAD_CALCULATIONS;
+
   static char buf[56] = {0};
   char temp_buf[8] = {0};
 
   memset(buf, '\0', ARRAY_SIZE(buf));
 
+  strcat(buf, (const __memx char*)"T:");
+  itoa(timeout, temp_buf, 10);
+  strcat(buf, temp_buf);
+  strcat(buf, (const __memx char*)" | ");
+
   float sum = 0; // Weighted Sum
   float div = 0; // Count
+  int8_t stopcheck = 0; // Stop check moved from motor_ctrl()  
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
-    for (int8_t i=0; i<SENSOR_COUNT; i++){
+    for (int8_t i=0; i<ADC_count; i++){
       itoa(ADC_lst[i].val, temp_buf, 10);
       strcat(buf, temp_buf);
       strcat(buf, (const __memx char*)", ");
 
-      div += !!(ADC_lst[i].val<SENSOR_THRESHOLD);
-      sum += (int8_t)( (ADC_lst[i].val<SENSOR_THRESHOLD) * weights[i] );
+      int8_t sensor_state =  !!(ADC_lst[i].val<SENSOR_THRESHOLD);
+
+      stopcheck |= ( (sensor_state) << i );
+
+      div += sensor_state;
+      sum += (int8_t)( sensor_state * weights[i] );
+    }
+  }
+
+  if ( (hydrangea_tick()-stateswap_tick) > MIN_RUNTIME_MS ){
+    if ( (stopcheck==0x1F) || (stopcheck==0x1C) || (stopcheck==0x07) || ( timeout<0 ) ){
+      // these correspond to: all off, all right&centre, all left&centre, all active
+      state = 0;
+      return;
     }
   }
 
   float x = sum/div;
-
+  
   if ( x==x ){
+    timeout = MAX_BAD_CALCULATIONS;
+
     prev_error = error;
     error = x;
     sum_error = CLAMP((sum_error+error),-96, +96);
+  } else {
+    timeout--;
   }
 
   float derivative = error-prev_error;
@@ -301,20 +324,6 @@ void motor_ctrl(){
   } 
   if ( rspd < MOTOR_SPD_DEAD ){
     dir = RIGHT_REV;
-  }
-
-  int8_t stopcheck = 0;
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
-    for (int8_t i=0; i<SENSOR_COUNT; i++){
-      stopcheck |= ( ( !!(ADC_lst[i].val<SENSOR_THRESHOLD) ) << i ) ;
-    }
-  }
-
-  if ( (hydrangea_tick()-stateswap_tick) > MIN_RUNTIME_MS ){
-    if ( (stopcheck==0x1F) || (stopcheck==0x1C) || (stopcheck==0x07) || (stopcheck==0x00) ){
-      // these correspond to: all off, all right&centre, all left&centre, all active
-      state = 0;
-    }
   }
 
   TC4_WRITE(OCR4A, CLAMP(ABS(lspd), 0, 768));
