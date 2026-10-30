@@ -5,13 +5,13 @@
 
 #define TASK_DEF(func_ptr, interval, offset) {func_ptr, -(interval-offset), interval}
 
-struct htask {
+typedef struct {
 	const void (*run)(void);
 	volatile uint16_t last_ms;
 	const uint16_t interval_ms;
-};
+} task_t;
 
-void task_run(struct htask arr[], uint8_t count);
+void task_run(task_t arr[], uint8_t count);
 
 uint16_t hydrangea_tick(void);
 

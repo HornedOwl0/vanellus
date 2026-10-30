@@ -31,7 +31,7 @@ ISR(TIMER0_COMPA_vect){
 	volatile_tick_ms_ctu++;
 }
 
-void task_run(struct htask arr[], uint8_t count){
+void task_run(task_t arr[], uint8_t count){
   if (arr!=NULL){
     uint16_t now_ms = volatile_tick_ms_ctu;
     for (int8_t i=0; i<count; i++){

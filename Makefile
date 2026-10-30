@@ -5,7 +5,7 @@ FLASH_BAUD := 1200
 # Frequencies in Hz
 CFLAGS = -std=gnu23 -mmcu=$(MMCU) -Wall -Oz -DF_CPU=$(FREQ)
 CC = avr-gcc
-OBJ = hyacinthus.o hydrangea.o
+OBJ = hyacinthus.o hydrangea.o hedera.o
 
 PORT = /dev/ttyACM0
 
