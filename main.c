@@ -11,15 +11,16 @@
 
 #include "hibiscus.h"
 #include "macros.h"
+#include "hyacinthus.h"
 
 void SETCLK(void) __attribute__((naked)) __attribute__((section(".init3")));
+
+static const __memx gpio_t led = {&PINB, &DDRB, &PORTB, PB0};
 
 int main(void){
 	cli(); /* Begin Setup - no interrupts */
 
-  SET(DDRD, PD5);
-  SET(DDRB, PB0);
-  CLR(PORTD, PD5);
+  gpio_output(&led);
 
   wdt_enable(WDTO_2S);
 
