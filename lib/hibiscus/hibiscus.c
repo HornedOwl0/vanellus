@@ -48,10 +48,7 @@
 
 #include "hibiscus.h"
 #include "descriptors.h"
-
-#ifndef FLASH_BAUD
-  #define FLASH_BAUD 1200UL
-#endif /* FLASH_BAUD */ 
+#include "config.h"
 
 /* Runtime Variables */
 

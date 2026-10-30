@@ -1,7 +1,5 @@
 #include <stdint.h>
 #include <stddef.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include <avr/io.h>
 #include <util/twi.h>
@@ -40,7 +38,7 @@ int8_t TWI_start(uint8_t addr, uint8_t read_write){
   TWDR = (addr<<1)|(read_write&0x01);
   TWCR = (1<<TWINT)|(1<<TWEN); 
   while( !(TWCR & (1<<TWINT)) ){} 
-  if ( (TW_STATUS != TW_MT_SLA_ACK) && (TW_STATUS != TW_MR_SLA_ACK) ){ return -1; } // Error on sending addr+SLA_W/R
+  if ( (TW_STATUS != TW_MT_SLA_ACK) && (TW_STATUS != TW_MR_SLA_ACK) ){ return -128; } // Error on sending addr+SLA_W/R
 
   return 0;
 }
@@ -60,36 +58,40 @@ int8_t TWI_write(uint8_t data){
 }
 
 int8_t TWI_read_ack(uint8_t *buf){
-  if (buf != NULL){
-    TWCR = (1<<TWINT)|(1<<TWEA)|(1<<TWEN); 
-    while( !(TWCR & (1<<TWINT)) ){} 
-    if ( TW_STATUS != TW_MR_DATA_ACK ){ return -1; } // Error During Reception
-    *(buf) = TWDR;
-  }
+  if (buf == NULL) { return 127; }
+
+  TWCR = (1<<TWINT)|(1<<TWEA)|(1<<TWEN); 
+  while( !(TWCR & (1<<TWINT)) ){} 
+  if ( TW_STATUS != TW_MR_DATA_ACK ){ return -1; } // Error During Reception
+  *(buf) = TWDR;
   return 0;
 }
 
 int8_t TWI_read_nack(uint8_t *buf){
-  if (buf != NULL){
-    TWCR = (1<<TWINT)|(1<<TWEN); 
-    while( !(TWCR & (1<<TWINT)) ){} 
-    if ( TW_STATUS != TW_MR_DATA_NACK ){ return -1; } // Error During Reception
-    *(buf) = TWDR;
-  }
+  if (buf == NULL) { return 127; }
+
+  TWCR = (1<<TWINT)|(1<<TWEN); 
+  while( !(TWCR & (1<<TWINT)) ){} 
+  if ( TW_STATUS != TW_MR_DATA_NACK ){ return -1; } // Error During Reception
+  *(buf) = TWDR;
   return 0;
 }
 
 /* High Level */ 
-int8_t TWI_writebuf(const __memx uint8_t* data, uint16_t len){
+int8_t TWI_writebuf(const __memx uint8_t* buf, uint16_t len){
+  if (buf == NULL) { return 127; }
+
   int8_t err = 0;
   while (len--){
-    err = TWI_write(*(data++));
+    err = TWI_write(*(buf++));
     if (err){ return err; }
   }
   return err;
 }
 
 int8_t TWI_readinto(uint8_t *buf, uint8_t len){
+  if (buf == NULL) { return 127; }
+
   int8_t err = 0;
   while ((len--)>1){
     err = TWI_read_ack(buf++);
