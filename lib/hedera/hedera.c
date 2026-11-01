@@ -5,6 +5,7 @@
 #include <util/twi.h>
 
 #include "hedera.h"
+#include "config.h"
 
 // F_SCL = F_CPU/16+2(TWBR)*4^PRESCALER
 // prescaler is zero -> 4^PRESCALER => 1
@@ -14,10 +15,12 @@
 // 8+TWBR = F_CPU/2*F_SCL
 // TWBR = (F_CPU/(F_SCL<<1)) - 8
 
+#define BITRATE ((F_CPU/(F_SCL<<1)-8))
+
 /* Primitives */
-void TWI_init(uint32_t freq){
+void __attribute__((naked)) __attribute__((section(".init3"))) TWI_init(void){
   /* Set Bitrate and Prescaler */
-  TWBR = ((uint32_t)F_CPU/(freq<<1))-8; 
+  TWBR = BITRATE; 
   TWSR &= (0xF8); // Prescaler is ZERO
   /* Enable Pull-Ups on the I2C Pins */
   DDRD &= ~((1<<PD1)|(1<<PD0));
@@ -28,9 +31,8 @@ void TWI_init(uint32_t freq){
 }
 
 int8_t TWI_start(uint8_t addr, uint8_t read_write){
-  /* Await old stop conditions */
-  while ( (TWCR & (1<<TWSTO)) ){}
-  /* Generate new start condition */
+  if ( !(TWCR&(1<<TWEN)) ) { return -128; }
+  /* Generate new Start condition */
   TWCR = (1<<TWINT)|(1<<TWSTA)|(1<<TWEN); 
   while( !(TWCR & (1<<TWINT)) ){}
   if ( TW_STATUS != TW_START && TW_STATUS != TW_REP_START ){ return 1; } 
@@ -38,18 +40,28 @@ int8_t TWI_start(uint8_t addr, uint8_t read_write){
   TWDR = (addr<<1)|(read_write&0x01);
   TWCR = (1<<TWINT)|(1<<TWEN); 
   while( !(TWCR & (1<<TWINT)) ){} 
-  if ( (TW_STATUS != TW_MT_SLA_ACK) && (TW_STATUS != TW_MR_SLA_ACK) ){ return -128; } // Error on sending addr+SLA_W/R
+  if ( (TW_STATUS != TW_MT_SLA_ACK) && (TW_STATUS != TW_MR_SLA_ACK) ){ return -1; } // Error on sending addr+SLA_W/R
 
   return 0;
 }
 
 int8_t TWI_stop(void){
+  if ( !(TWCR&(1<<TWEN)) ) { return -128; }
+  /* Generate new Stop Condition */
   TWCR = (1<<TWINT)|(1<<TWSTO)|(1<<TWEN); 
-  while ( (TWCR & (1<<TWSTO)) ){}
+  uint16_t timeout = 0xFFFF;
+  while ( (TWCR & (1<<TWSTO)) ){
+    if (--timeout == 0){
+      TWCR = (0<<TWSTO)|(1<<TWEN); 
+      return -1; // Invalid Stop Condition
+    }
+  }
   return 0;
 }
 
 int8_t TWI_write(uint8_t data){
+  if ( !(TWCR&(1<<TWEN)) ) { return -128; }
+
   TWDR=data;
   TWCR=(1<<TWINT)|(1<<TWEN); 
   while( !(TWCR & (1<<TWINT)) ){} 
@@ -58,6 +70,7 @@ int8_t TWI_write(uint8_t data){
 }
 
 int8_t TWI_read_ack(uint8_t *buf){
+  if ( !(TWCR&(1<<TWEN)) ) { return -128; }
   if (buf == NULL) { return 127; }
 
   TWCR = (1<<TWINT)|(1<<TWEA)|(1<<TWEN); 
@@ -68,6 +81,7 @@ int8_t TWI_read_ack(uint8_t *buf){
 }
 
 int8_t TWI_read_nack(uint8_t *buf){
+  if ( !(TWCR&(1<<TWEN)) ) { return -128; }
   if (buf == NULL) { return 127; }
 
   TWCR = (1<<TWINT)|(1<<TWEN); 
@@ -97,6 +111,6 @@ int8_t TWI_readinto(uint8_t *buf, uint8_t len){
     err = TWI_read_ack(buf++);
     if (err){ return err; }
   }
-  TWI_read_nack(buf);
+  err = TWI_read_nack(buf);
   return err;
 }

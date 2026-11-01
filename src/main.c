@@ -6,7 +6,6 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <avr/wdt.h>
-#include <avr/power.h>
 
 #include <util/delay.h>
 #include <util/atomic.h>
@@ -19,12 +18,23 @@
 #include "hedera.h"
 
 #include "macros.h"
+#include "config.h"
 
-static uint8_t framebuf[512] = {0};
-void framebuf_drawpixel(const uint8_t x, const uint8_t y){
-  return;
-}
 /* Non-Task Function Prototypes */
+
+extern uint8_t framebuf[FRAMEBUF_SIZE];
+
+extern int8_t framebuf_drawpx(uint8_t x, uint8_t y, int8_t val);
+
+extern int8_t framebuf_drawsprite(uint8_t x, uint8_t y, const __memx uint8_t* spr);
+
+extern int8_t framebuf_putc(uint8_t x, uint8_t y, char c);
+
+extern int8_t framebuf_puts(uint8_t x, uint8_t y, const __memx char *s);
+
+extern void oled_writecmd(const __memx uint8_t *buf, uint16_t len);
+
+extern void oled_writescr(const __memx uint8_t *buf, uint16_t len);
 
 /* Task Function Prototypes */
 
@@ -35,15 +45,27 @@ void display_white(void);
 /* Hydrangea -> ptr, interval, offset */
 task_t task_main[] = {
   TASK_DEF(&blink, 100, 35),
-  TASK_DEF(&display, 1000, 65),
+  TASK_DEF(&display, 200, 65),
 };
 
 int main(void){
 	cli(); /* Begin Setup - no interrupts */
 
-  memset(framebuf, 0xFF, ARRAY_SIZE(framebuf));
+  framebuf_drawpx(0, 0, 1);
+  framebuf_drawpx(127, 0, 1);
+  framebuf_drawpx(0, 31, 1);
+  framebuf_drawpx(127, 31, 1);
 
-  wdt_enable(WDTO_120MS);
+  framebuf_puts(16, 12, "Hello World!");
+
+  TWI_start(60, TW_WRITE);
+  if (TWI_stop()){
+    gpio_t LED_STATIC = {&PIND, &DDRD, &PORTD, PD5};
+    gpio_output(&LED_STATIC);
+    gpio_clr(&LED_STATIC);
+  }
+
+  wdt_enable(WDTO_2S);
 
 	sei(); /* End Setup - all interrupts */
 
@@ -56,46 +78,18 @@ int main(void){
 }
 
 void blink(void){
-  static const __flash gpio_t LED_STATIC = {&PIND, &DDRD, &PORTD, PD5};
+  static const __flash gpio_t LED_STATIC = {&PORTD, &DDRD, &PORTD, PD5};
+  static const __flash gpio_t LED_BLINK = {&PINB, &DDRB, &PORTB, PB0};
+
   gpio_output(&LED_STATIC);
   gpio_set(&LED_STATIC);
 
-  static const __flash gpio_t LED_BLINK = {&PINB, &DDRB, &PORTB, PB0};
   gpio_output(&LED_BLINK);
   gpio_tog(&LED_BLINK);
   return;
 }
 
 void display(void){
-  TWI_start(60, TW_WRITE);
-  TWI_write(0x40);
-  TWI_writebuf(framebuf, ARRAY_SIZE(framebuf));
-  TWI_stop();
-
+  oled_writescr(framebuf, FRAMEBUF_SIZE);
   return;
 }
-
-void __attribute__((constructor)) display_init(void){
-  static const __flash uint8_t ssd1306_startup[] = {
-    0xAE, // Display off
-    /* Stripped Startup */
-    0xA8, 31,     // Set Multiplex Ratio -- 32-1 
-    0x8D, 0x14,   // Charge Pump On
-    0xDA, 0x02,   // Alternative Arrangement
-    /* Set Dimensions */
-    0x20, 0x01,   // Vertical Addressing
-    0x21, 0, 127, // Set Start and End Columns
-    0x22, 0, 3,   // Set Start and End Pages
-    /* Exiting */
-    0xAF, // Display On
-  };
-
-  TWI_init(400000UL);
-  TWI_start(60, TW_WRITE);
-  TWI_write(0x00);
-  TWI_writebuf(ssd1306_startup, ARRAY_SIZE(ssd1306_startup));
-  TWI_stop();
-
-  return;
-}
-

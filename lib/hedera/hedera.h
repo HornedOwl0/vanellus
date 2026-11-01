@@ -2,7 +2,7 @@
 #define HEDERA_H
 
 /* Primitives */
-void TWI_init(uint32_t freq);
+void TWI_init(void);
 
 int8_t TWI_start(uint8_t addr, uint8_t read_write);
 
