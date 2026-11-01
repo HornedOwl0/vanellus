@@ -1,14 +1,15 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include "framebuf.h"
 #include "config.h"
 #include "font.h"
 
 uint8_t framebuf[FRAMEBUF_SIZE] = {0};
 
 int8_t framebuf_drawpx(uint8_t x, uint8_t y, int8_t val){
-  if(x>127){ return -1; }
-  if(y>31){ return 1; }
+  if(x>=SIZE_X){ return -1; }
+  if(y>=SIZE_Y){ return 1; }
   uint16_t pos = ( x+((y&0xF8)<<4) );
   if (val)
     framebuf[pos] |= (1<<(y&0x07));
@@ -41,4 +42,12 @@ int8_t framebuf_puts(uint8_t x, uint8_t y, const __memx char *s){
     }
   }
   return 0;
+}
+
+inline uint8_t* framebuf_ptr(void){
+  return framebuf;
+}
+
+inline uint16_t framebuf_size(void){
+  return FRAMEBUF_SIZE;
 }

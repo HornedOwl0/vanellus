@@ -2,7 +2,10 @@
 #include <stddef.h>
 
 #include <avr/io.h>
+#include <avr/interrupt.h>
+
 #include <util/twi.h>
+#include <util/atomic.h>
 
 #include "hedera.h"
 #include "config.h"
@@ -15,7 +18,13 @@
 // 8+TWBR = F_CPU/2*F_SCL
 // TWBR = (F_CPU/(F_SCL<<1)) - 8
 
-#define BITRATE ((F_CPU/(F_SCL<<1)-8))
+#define BITRATE ((uint32_t)((uint32_t)F_CPU/((uint32_t)F_SCL<<1)-8))
+
+static volatile const __memx uint8_t *wptr;
+static volatile uint8_t *rptr;
+static volatile uint16_t len;
+static volatile uint8_t sla_addr;
+static volatile uint8_t state;
 
 /* Primitives */
 void __attribute__((naked)) __attribute__((section(".init3"))) TWI_init(void){
@@ -91,26 +100,90 @@ int8_t TWI_read_nack(uint8_t *buf){
   return 0;
 }
 
-/* High Level */ 
-int8_t TWI_writebuf(const __memx uint8_t* buf, uint16_t len){
-  if (buf == NULL) { return 127; }
-
-  int8_t err = 0;
-  while (len--){
-    err = TWI_write(*(buf++));
-    if (err){ return err; }
+/* High Level -- ISR Based */ 
+ISR(TWI_vect){
+  switch (TW_STATUS){
+    case TW_START:
+    case TW_REP_START:
+      if (state&(1<<TWSTA)){
+        TWDR = sla_addr;
+        TWCR = (1<<TWINT)|(1<<TWEN)|(1<<TWIE);
+      }
+      break;
+    case TW_MT_SLA_ACK:
+    case TW_MT_DATA_ACK:
+      if (len > 0){
+        TWDR = *(wptr++); len--;
+        TWCR = (1<<TWINT)|(1<<TWEN)|(1<<TWIE); 
+        break;
+      } else {
+        if (state&(1<<TWSTO))
+          TWI_stop();
+      }
+      break;
+    case TW_MR_SLA_ACK:
+    case TW_MR_DATA_ACK:
+      *(rptr++) = TWDR; len--;
+      if (len > 1){
+        TWCR = (1<<TWINT)|(1<<TWEN)|(1<<TWEA)|(1<<TWIE); 
+      } else {
+        TWCR = (1<<TWINT)|(1<<TWEN)|(1<<TWIE); 
+      }
+      break;
+    case TW_MR_DATA_NACK:
+      *(rptr++) = TWDR; len--;
+      if (state&(1<<TWSTO))
+        TWI_stop();
+      break;
+    case TW_MR_SLA_NACK:
+    case TW_MT_SLA_NACK:
+    case TW_MT_DATA_NACK:
+    default:
+      TWI_stop();
+      break;
   }
-  return err;
 }
 
-int8_t TWI_readinto(uint8_t *buf, uint8_t len){
+int8_t TWI_writebuf(uint8_t addr, const __memx uint8_t* buf, uint16_t n, int8_t start, int8_t stop){
+  if (!TWI_available()) { return 1; }
   if (buf == NULL) { return 127; }
 
-  int8_t err = 0;
-  while ((len--)>1){
-    err = TWI_read_ack(buf++);
-    if (err){ return err; }
+  sla_addr = (addr<<1|TW_WRITE);
+  state = ((!!start)<<TWSTA)|((!!stop)<<TWSTO);
+  wptr = buf;
+  len = n;
+
+  /* Generate new Start condition */
+  if (!!start)
+    TWCR = (1<<TWINT)|(1<<TWSTA)|(1<<TWEN)|(1<<TWIE); 
+  else
+    TWCR = (1<<TWINT)|(1<<TWEN)|(1<<TWIE); 
+  
+  return 0;
+}
+
+int8_t TWI_readinto(uint8_t addr, uint8_t* buf, uint16_t n, int8_t start, int8_t stop){
+  if (!TWI_available()) { return 1; }
+  if (buf == NULL) { return 127; }
+
+  sla_addr = (addr<<1|TW_READ);
+  state = ((!!start)<<TWSTA)|((!!stop)<<TWSTO);
+  rptr = buf;
+  len = n;
+
+  /* Generate new Start condition */
+  if (!!start)
+    TWCR = (1<<TWINT)|(1<<TWSTA)|(1<<TWEN)|(1<<TWIE); 
+  else
+    TWCR = (1<<TWINT)|(1<<TWEN)|(1<<TWIE); 
+  
+  return 0;
+}
+
+int8_t TWI_available(void){
+  int8_t hold = 0;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
+    hold = !(len>0);
   }
-  err = TWI_read_nack(buf);
-  return err;
+  return hold;
 }

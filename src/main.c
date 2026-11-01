@@ -18,19 +18,9 @@
 #include "hedera.h"
 
 #include "macros.h"
-#include "config.h"
+#include "framebuf/framebuf.h"
 
 /* Non-Task Function Prototypes */
-
-extern uint8_t framebuf[FRAMEBUF_SIZE];
-
-extern int8_t framebuf_drawpx(uint8_t x, uint8_t y, int8_t val);
-
-extern int8_t framebuf_drawsprite(uint8_t x, uint8_t y, const __memx uint8_t* spr);
-
-extern int8_t framebuf_putc(uint8_t x, uint8_t y, char c);
-
-extern int8_t framebuf_puts(uint8_t x, uint8_t y, const __memx char *s);
 
 extern void oled_writecmd(const __memx uint8_t *buf, uint16_t len);
 
@@ -40,23 +30,18 @@ extern void oled_writescr(const __memx uint8_t *buf, uint16_t len);
 
 void blink(void);
 void display(void);
-void display_white(void);
 
 /* Hydrangea -> ptr, interval, offset */
 task_t task_main[] = {
   TASK_DEF(&blink, 100, 35),
-  TASK_DEF(&display, 200, 65),
+  TASK_DEF(&display, 10, 65),
 };
 
 int main(void){
 	cli(); /* Begin Setup - no interrupts */
 
-  framebuf_drawpx(0, 0, 1);
-  framebuf_drawpx(127, 0, 1);
-  framebuf_drawpx(0, 31, 1);
-  framebuf_drawpx(127, 31, 1);
-
-  framebuf_puts(16, 12, "Hello World!");
+  framebuf_puts(0, 8, "OwO~ \\^w^/:3|*");
+  framebuf_puts(0, 16, "HornedOwl_ +-");
 
   TWI_start(60, TW_WRITE);
   if (TWI_stop()){
@@ -90,6 +75,55 @@ void blink(void){
 }
 
 void display(void){
-  oled_writescr(framebuf, FRAMEBUF_SIZE);
+  oled_writescr(framebuf_ptr(), framebuf_size());
+  return;
+}
+
+void oled_writecmd(const __memx uint8_t *buf, uint16_t len){
+  if (TWI_available()){
+    uint8_t ctrl[1] = {0x00};
+    TWI_writebuf(60, ctrl, ARRAY_SIZE(ctrl), TWI_START, TWI_NOSTOP);
+    while (!TWI_available()){}
+    TWI_writebuf(60, buf, len, TWI_NOSTART, TWI_STOP);
+  }
+
+  return;
+}
+
+void oled_writescr(const __memx uint8_t *buf, uint16_t len){
+  if (TWI_available()){
+    uint8_t ctrl[1] = {0x40};
+    TWI_writebuf(60, ctrl, ARRAY_SIZE(ctrl), TWI_START, TWI_NOSTOP);
+    while (!TWI_available()){}
+    TWI_writebuf(60, buf, len, TWI_NOSTART, TWI_STOP);
+  }
+
+  return;
+}
+
+void __attribute__((constructor)) oled_init(void){
+  static const __flash uint8_t ssd1306_startup[] = {
+    0xAE, // Display off
+    /* Stripped Startup */
+    0xA8, 31,     // Set Multiplex Ratio -- 32-1 
+    0x8D, 0x14,   // Charge Pump On
+    0xDA, 0x02,   // Alternative Arrangement
+    /* Set Dimensions */
+    0x20, 0x00,   // Vertical Addressing
+    0x21, 0, 127, // Set Start and End Columns
+    0x22, 0, 3,   // Set Start and End Pages
+    /* Exiting */
+    // 0xA0, 0xC0,   // Normal Orientation
+    0xA1, 0xC8,   // Flip Orientation
+    0xAF, // Display On
+  };
+
+  TWI_start(60, TW_WRITE);
+  TWI_write(0x00);
+  for (int8_t i=0; i<ARRAY_SIZE(ssd1306_startup); i++) {
+    TWI_write(ssd1306_startup[i]);
+  }
+  TWI_stop();
+
   return;
 }
