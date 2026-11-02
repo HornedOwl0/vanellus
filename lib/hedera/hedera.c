@@ -110,20 +110,20 @@ ISR(TWI_vect){
         TWCR = (1<<TWINT)|(1<<TWEN)|(1<<TWIE);
       }
       break;
-    case TW_MT_SLA_ACK:
     case TW_MT_DATA_ACK:
+    case TW_MT_SLA_ACK:
       if (len > 0){
         TWDR = *(wptr++); len--;
         TWCR = (1<<TWINT)|(1<<TWEN)|(1<<TWIE); 
         break;
       } else {
         if (state&(1<<TWSTO))
-          TWI_stop();
+          goto stp;
       }
       break;
-    case TW_MR_SLA_ACK:
     case TW_MR_DATA_ACK:
       *(rptr++) = TWDR; len--;
+    case TW_MR_SLA_ACK:
       if (len > 1){
         TWCR = (1<<TWINT)|(1<<TWEN)|(1<<TWEA)|(1<<TWIE); 
       } else {
@@ -133,13 +133,23 @@ ISR(TWI_vect){
     case TW_MR_DATA_NACK:
       *(rptr++) = TWDR; len--;
       if (state&(1<<TWSTO))
-        TWI_stop();
+        goto stp;
       break;
-    case TW_MR_SLA_NACK:
-    case TW_MT_SLA_NACK:
     case TW_MT_DATA_NACK:
+    case TW_MT_SLA_NACK:
+    case TW_MR_SLA_NACK:
+      stp:
+      TWCR = (1<<TWINT)|(1<<TWSTO)|(1<<TWEN);
+      goto rst;
+    // Arbitration Loss or Bus Error or No Info  
     default:
-      TWI_stop();
+      TWCR = (1<<TWINT)|(1<<TWEN); 
+      rst:
+      sla_addr = 0;
+      state = 0;
+      wptr = NULL;
+      rptr = NULL;
+      len = 0;
       break;
   }
 }
