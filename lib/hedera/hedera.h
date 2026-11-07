@@ -26,7 +26,7 @@ int8_t TWI_read_nack(uint8_t *var);
 
 int8_t TWI_writebuf(uint8_t addr, const __memx uint8_t* buf, uint16_t n, int8_t start, int8_t stop);
 
-int8_t TWI_readinto(uint8_t addr, uint8_t* buf, uint16_t n, int8_t start, int8_t stop);
+int8_t TWI_readinto(uint8_t addr, uint8_t* buf, uint16_t n, int8_t stop);
 
 int8_t TWI_available(void);
 
