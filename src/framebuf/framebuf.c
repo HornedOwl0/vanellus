@@ -111,12 +111,26 @@ inline void framebuf_fill(int8_t val){
 }
 
 void framebuf_fillrect(uint8_t x, uint8_t y, uint8_t w, uint8_t h, int8_t val){
-  if ( w<1 || h<1 ){ return; }
-  for (uint8_t i=0; i<(w-1); i++){
-    for (uint8_t j=0; j<(h-1); j++){
-      framebuf_drawpx(x+i, y+j, val);
-    }
+  uint16_t pos = 0;
+
+  uint8_t hpage = (y>>3);
+  uint8_t lpage = ((y+h-1)>>3);
+
+  /* Draw Top-Mid-Low Page */
+  for (int8_t p=hpage; p<=lpage; p++){
+    uint8_t mask = 0xFF;
+    if ( p == hpage )
+      mask <<= (y&0x07);
+    if ( p == lpage )
+      mask >>= ((y+h)&0x07);
+
+    pos = ( x+(p<<7) );
+    if (val)
+      for (uint8_t i=0; i<w; i++) { framebuf[pos+i] |= mask; }
+    else
+      for (uint8_t i=0; i<w; i++) { framebuf[pos+i] &= ~mask; }
   }
+
   return;
 }
 

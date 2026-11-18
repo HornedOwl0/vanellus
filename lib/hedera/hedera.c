@@ -22,7 +22,7 @@
 
 static volatile const __memx uint8_t *wptr;
 static volatile uint8_t *rptr;
-static volatile uint16_t len; // Using the Highest Bit as a flag
+static volatile uint16_t len; // Using Lowest 12 Bits as CTU, High bits as stop flag and reserved
 static volatile uint8_t sla_addr;
 
 /* Primitives */
@@ -39,7 +39,6 @@ void __attribute__((naked)) __attribute__((section(".init3"))) TWI_init(void){
   #endif
   /* Enable TWI module */
   TWCR = (1<<TWEN);
-  return;
 }
 
 int8_t TWI_start(uint8_t addr, uint8_t read_write){
@@ -106,7 +105,13 @@ int8_t TWI_read_ack(uint8_t *buf){
   if (buf == NULL) { return 127; }
 
   TWCR = (1<<TWINT)|(1<<TWEA)|(1<<TWEN); 
-  while( !(TWCR & (1<<TWINT)) ){} 
+  uint16_t timeout = 0xFFFF;
+  while( !(TWCR & (1<<TWINT)) ){
+    if (--timeout == 0){
+      TWCR = (1<<TWINT)|(1<<TWEN);
+      return -1; // Timed Out
+    }
+  } 
   if ( TW_STATUS != TW_MR_DATA_ACK ){ return -1; } // Error During Reception
   *(buf) = TWDR;
   return 0;
@@ -116,7 +121,13 @@ int8_t TWI_read_nack(uint8_t *buf){
   if (buf == NULL) { return 127; }
 
   TWCR = (1<<TWINT)|(1<<TWEN); 
-  while( !(TWCR & (1<<TWINT)) ){} 
+  uint16_t timeout = 0xFFFF;
+  while( !(TWCR & (1<<TWINT)) ){
+    if (--timeout == 0){
+      TWCR = (1<<TWINT)|(1<<TWEN);
+      return -1; // Timed Out
+    }
+  } 
   if ( TW_STATUS != TW_MR_DATA_NACK ){ return -1; } // Error During Reception
   *(buf) = TWDR;
   return 0;
@@ -133,7 +144,7 @@ ISR(TWI_vect){
     case TW_MT_DATA_ACK:
       wptr++; len--;
     case TW_MT_SLA_ACK:
-      if ((len&0x7FFF) > 0){
+      if ((len&0x0FFF) > 0){
         TWDR = *(wptr);
         TWCR = (1<<TWINT)|(1<<TWEN)|(1<<TWIE);
         break;
@@ -146,67 +157,70 @@ ISR(TWI_vect){
     case TW_MR_DATA_ACK:
       *(rptr++) = TWDR; len--;
     case TW_MR_SLA_ACK:
-      if ((len&0x7FFF) > 1)
+      if ((len&0x0FFF) > 1)
         TWCR = (1<<TWINT)|(1<<TWEN)|(1<<TWEA)|(1<<TWIE); 
       else
         TWCR = (1<<TWINT)|(1<<TWEN)|(1<<TWIE); 
       break;
     case TW_MR_DATA_NACK:
-      *(rptr) = TWDR; len--;
+      *(rptr) = TWDR;
       if (len&0x8000)
         goto stp;
       else
-        rst:
-        TWCR = (1<<TWEN); 
+        goto rst;
       break;
     case TW_MT_DATA_NACK:
     case TW_MT_SLA_NACK:
     case TW_MR_SLA_NACK:
     stp:
       TWCR = (1<<TWINT)|(1<<TWSTO)|(1<<TWEN);
+      goto clr;
       break;
     // Arbitration Loss or Bus Error or No Info  
     default:
       TWCR = (1<<TWINT)|(1<<TWEN); 
+      goto clr;
+      rst:
+      TWCR = (1<<TWEN); 
+      clr:
+      len = 0;
       break;
   }
 }
 
 int8_t TWI_writebuf(uint8_t addr, const __memx uint8_t* buf, uint16_t n, int8_t start, int8_t stop){
   if (!TWI_available()) { return 1; }
-  if (n > 0x7FFF) { return -1; }
+  if (n > 0x0FFF) { return -1; } // Hard Limit of 4095 Bytes
   if (buf == NULL) { return 127; }
-
-  while ( (TWCR & (1<<TWSTO)) ){} // Await any stop conditions to finish
 
   sla_addr = (addr<<1|TW_WRITE);
   wptr = buf;
-  len = ((!!stop)<<15)+(n);
+  len = ((!!stop)<<15)|(n);
 
-  TWDR = *(wptr);
-
-  /* Generate new Start condition */
-  if (!!start)
-    TWCR = (1<<TWINT)|(1<<TWSTA)|(1<<TWEN)|(1<<TWIE); 
-  else
+  TWDR = *(wptr); // First Write for nostart option
+  /* Jump to ISR */
+  if (!start)
     TWCR = (1<<TWINT)|(1<<TWEN)|(1<<TWIE); 
+  else 
+    TWCR = (1<<TWINT)|(1<<TWSTA)|(1<<TWEN)|(1<<TWIE); 
   
   return 0;
 }
 
-int8_t TWI_readinto(uint8_t addr, uint8_t* buf, uint16_t n, int8_t stop){
+int8_t TWI_readinto(uint8_t addr, uint8_t* buf, uint16_t n, int8_t start, int8_t stop){
   if (!TWI_available()) { return 1; }
-  if (n > 0x7FFF) { return -1; }
+  if (n > 0x0FFF) { return -1; }
   if (buf == NULL) { return 127; }
-  
-  while ( (TWCR & (1<<TWSTO)) ){} // Await any stop conditions to finish
   
   sla_addr = (addr<<1|TW_READ);
   rptr = buf;
   len = ((!!stop)<<15)|(n);
 
-  /* Generate new Start condition */
-  TWCR = (1<<TWINT)|(1<<TWSTA)|(1<<TWEN)|(1<<TWIE); 
+  /* Jump to ISR */
+  if (!start)
+    TWCR = (1<<TWINT)|((n>1)<<TWEA)|(1<<TWEN)|(1<<TWIE); 
+  else 
+    TWCR = (1<<TWINT)|(1<<TWSTA)|(1<<TWEN)|(1<<TWIE); 
   
   return 0;
 }
@@ -214,7 +228,7 @@ int8_t TWI_readinto(uint8_t addr, uint8_t* buf, uint16_t n, int8_t stop){
 int8_t TWI_available(void){
   int8_t val;
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
-    val = !(len&0x7FFF);
+    val = !( (len&0x0FFF) || (TWCR&(1<<TWSTO)) );
   }
   return val;
 }

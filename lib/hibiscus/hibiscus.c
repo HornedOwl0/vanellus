@@ -305,7 +305,7 @@ ISR(USB_COM_vect){
       uint16_t *addr = (uint16_t*)0x0800;
 
       *(addr) = 0x7777; // Key to bootloader
-
+      
       wdt_enable(WDTO_15MS);
       for(;;){}
     }

@@ -17,30 +17,54 @@
 #include "hydrangea.h"
 #include "hyacinthus.h"
 #include "hedera.h"
+#include "helianthus.h"
+
+#include "framebuf.h"
+#include "imu.h"
+#include "oled.h"
 
 #include "macros.h"
-#include "framebuf.h"
+#include "config.h"
+
+/* Helianthus */
+struct ADC_mnt ADC_lst[] = {
+  {.ADCn = 4}, // Edge Sensor
+  {.ADCn = 5},
+}; int8_t ADC_count = sizeof(ADC_lst);
 
 /* Global Static Allocation */
 
-static int8_t relh = 0;
-static _Accum temp = 0.0k;
+static const float Kp = 14.4f;
+static const float Ki = 1.0f;
+static const float Kd = 3.6f;
+
+static float error = 0.0f;
+static float prev_error = 0.0f;
+static float sum_error = 0.0f;
+
+static float pid_out = 0.0f;
+
+static int8_t weights[] = {-12, -8, 0, +8, +12};
 
 /* Non-Task Function Prototypes */
 
+void SPI_write(uint8_t data);
+
 /* Task Function Prototypes */
 
-void blink(void);
-void display(void);
 void update_counter(void);
-void temp_sensor(void);
+void calc_PID(void);
+void motor_ctrl(void);
 
 /* Hydrangea -> ptr, interval, offset */
 task_t task_main[] = {
-  // TASK_DEF(&blink, 1000, 35),
-  TASK_DEF(&display, 85, 65),
+  TASK_DEF(&OLED_refresh, 85, 65),
+  TASK_DEF(&IMU_read, 135, 165),
+
+  TASK_DEF(&calc_PID, 5, 173),
+  TASK_DEF(&motor_ctrl, 10, 179),
+
   TASK_DEF(&update_counter, 100, 115),
-  TASK_DEF(&temp_sensor, 165, 135),
 };
 
 int main(void){
@@ -52,7 +76,7 @@ int main(void){
     gpio_set(&LED_STATIC);
     gpio_t LED_BLINK = {&PINB, &DDRB, &PORTB, PB0};
     gpio_output(&LED_BLINK);
-    gpio_set(&LED_BLINK);
+    gpio_set(&LED_BLINK); // SET SLAVE SELECT AS HIGH
   }
 
   wdt_enable(WDTO_120MS);
@@ -67,112 +91,147 @@ int main(void){
 	return 0;
 }
 
-void blink(void){
-  static const __flash gpio_t LED_BLINK = {&PINB, &DDRB, &PORTB, PB0};
-
-  gpio_output(&LED_BLINK);
-  gpio_tog(&LED_BLINK);
-  return;
-}
-
-void display(void){
-  if ( TWI_available() ){
-    if ( !TWI_start(60, TW_WRITE) ){ // noerr
-      TWI_write(0x40);
-      TWI_writebuf(60, framebuf_ptr(), framebuf_size(), TWI_NOSTART, TWI_STOP);
-    }
-  }
-  return;
-}
-
 void update_counter(void){
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
-    char pbuf[16] = {0}; // Print Buf
-    char tbuf[8] = {0}; // Temp Buf
+    char buf[16] = {0}; // Temp Buf
 
     framebuf_fill(0);
-
-    framebuf_puts(24, 0, FRAMEBUF_SMALL, (const __memx char*)"Temp");
-    framebuf_drawrect(0, 12, 82, 20, 1);
     
-    itoa(temp, pbuf, 10); // Get
-    strcat(pbuf, (const __memx char*)".");
-    itoa((temp-(int16_t)temp)*10, tbuf, 10); // Get
-    strcat(pbuf, tbuf);
-    framebuf_puts(1+((5-strlen(pbuf))<<3), 13, FRAMEBUF_LARGE, pbuf); // Put
-    
-    framebuf_drawrect(84, 12, 44, 20, 1);
-    itoa(relh, pbuf, 10); // Get
+    framebuf_puts(8, 0, FRAMEBUF_SMALL, (const __memx char*)"ACCEL");
 
-    framebuf_puts(90, 0, FRAMEBUF_SMALL, (const __memx char*)"RelH"); // Put
-    framebuf_puts(90+((2-strlen(pbuf))<<3), 13, FRAMEBUF_LARGE, pbuf); // Put
+    framebuf_puts(0, 8, FRAMEBUF_SMALL, (const __memx char*)"X"); // Put
+    framebuf_puts(0, 16, FRAMEBUF_SMALL, (const __memx char*)"Y"); // Put
+    framebuf_puts(0, 24, FRAMEBUF_SMALL, (const __memx char*)"Z"); // Put
+
+    ltoa(IMU.ax, buf, 10); // Get
+    framebuf_puts(16, 8, FRAMEBUF_SMALL, buf); // Put
+    
+    ltoa(IMU.ay, buf, 10); // Get
+    framebuf_puts(16, 16, FRAMEBUF_SMALL, buf); // Put
+    
+    ltoa(IMU.az, buf, 10); // Get
+    framebuf_puts(16, 24, FRAMEBUF_SMALL, buf); // Put
+    
+    framebuf_puts(80, 0, FRAMEBUF_SMALL, (const __memx char*)"GYRO");
+    
+    ltoa(IMU.gx, buf, 10); // Get
+    framebuf_puts(80, 8, FRAMEBUF_SMALL, buf); // Put
+    
+    ltoa(IMU.gy, buf, 10); // Get
+    framebuf_puts(80, 16, FRAMEBUF_SMALL, buf); // Put
+    
+    ltoa(IMU.gz, buf, 10); // Get
+    framebuf_puts(80, 24, FRAMEBUF_SMALL, buf); // Put
   }
   
   return;
 }
 
-void temp_sensor(void){
-  uint8_t aht[7] = {0};
-  static const __flash uint8_t cmd[] = {
-    0xAC, 0x33, 0x00,
-  };
-  
-  if ( !TWI_readinto(0x38, aht, ARRAY_SIZE(aht), TWI_NOSTOP) ){
-    while ( !TWI_available() ){}
+void calc_PID(void){
+  static char buf[56] = {0};
+  char temp_buf[8] = {0};
 
-    if ( aht[0]&0x80 ){ return; } // Check Status
+  memset(buf, '\0', ARRAY_SIZE(buf));
 
-    TWI_writebuf(0x38, cmd, ARRAY_SIZE(cmd), TWI_START, TWI_STOP);
+  float sum = 0; // Weighted Sum
+  float div = 0; // Count
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
+    for (int8_t i=0; i<ADC_count; i++){
+      itoa(ADC_lst[i].val, temp_buf, 10);
+      strcat(buf, temp_buf);
+      strcat(buf, (const __memx char*)", ");
 
-    // CRC8 
-    // Polynomial: X8+X5+X4+1 
-    // Poly: 1 0011 0001 -> 0x31 (Truncated)
-    
-    uint8_t crc = 0xFF;
-    for (int8_t i=0; i<ARRAY_SIZE(aht); i++){
-      crc ^= aht[i];
-      for (int8_t b=8; b>0; --b){
-        if (crc&0x80)
-          crc = (crc<<1)^(0x31);
-        else
-          crc = (crc<<1);
-      }
+      int8_t sensor_state =  !!(ADC_lst[i].val<SENSOR_THRESHOLD);
+
+      div += sensor_state;
+      sum += (int8_t)( sensor_state * weights[i] );
     }
-
-    uint32_t relh_raw = ((uint32_t)aht[1])<<12|((uint32_t)aht[2])<<4|((uint32_t)aht[3]&0xF0)>>4;
-    relh = (relh_raw*100)>>20;
-
-    uint32_t temp_raw = ((uint32_t)aht[3]&0x0F)<<16|((uint32_t)aht[4])<<8|((uint32_t)aht[5]<<0);
-    temp = ((_Accum)(temp_raw>>(20-ACCUM_IBIT))>>ACCUM_IBIT)*200-50;
   }
+
+  float x = sum/div;
+  
+  if ( x==x ){
+    prev_error = error;
+    error = x;
+    sum_error = CLAMP((sum_error+error),-96, +96);
+  }
+
+  float derivative = error-prev_error;
+  float integral = sum_error;
+  float proportional = error;
+
+  pid_out = (Kp*proportional) + (Ki*integral) + (Kd*derivative);
+
+  dtostrf(pid_out, 0, 2, temp_buf);
+  strcat(buf, temp_buf);
+  strcat(buf, (const __memx char*)"\r\n");
+  ACM_puts(buf);
 
   return;
 }
 
-void __attribute__((constructor)) oled_init(void){
-  static const __flash uint8_t cmd[] = { // SSD1306
-    0x00, // Send Cmd
-    0xAE, // Display off
-    /* Stripped Startup */
-    0xA8, 31,     // Set Multiplex Ratio -- 32-1 
-    0x8D, 0x14,   // Charge Pump On
-    0xDA, 0x02,   // Alternative Arrangement
-    /* Set Dimensions */
-    0x20, 0x00,   // Vertical Addressing
-    0x21, 0, 127, // Set Start and End Columns
-    0x22, 0, 3,   // Set Start and End Pages
-    /* Exiting */
-    // 0xA0, 0xC0,   // Normal Orientation
-    0xA1, 0xC8,   // Flip Orientation
-    0xAF, // Display On
-  };
-  
-  if (!TWI_start(60, TW_WRITE)){
-    for (int8_t i=0; i<ARRAY_SIZE(cmd); i++) {
-      TWI_write(cmd[i]);
-    }
-    TWI_stop();
+#define TC4_WRITE(reg, val) ({ TC4H=MSB(val); reg=LSB(val); })
+#define TC4_READ(reg, var) ({ var = reg; var |= (uint16_t)(TC4H<<8) })
+
+void motor_ctrl(){
+  int16_t lspd = 0;
+  int16_t rspd = 0;
+
+  int16_t pid_val = (int16_t)pid_out;
+
+  int8_t dir = FWD;
+
+  lspd = (MOTOR_SPD_OFFSET_L + MOTOR_SPD_FORWARD) - pid_val;
+  rspd = (MOTOR_SPD_OFFSET_R + MOTOR_SPD_FORWARD) + pid_val;
+
+  if ( lspd < MOTOR_SPD_DEAD ){
+    dir = LEFT_REV;
+  } 
+  if ( rspd < MOTOR_SPD_DEAD ){
+    dir = RIGHT_REV;
   }
 
+  TC4_WRITE(OCR4A, CLAMP(ABS(lspd), 0, 768));
+  TC4_WRITE(OCR4B, CLAMP(ABS(rspd), 0, 768));
+  
+  SPI_write(dir);
+
+  return;
+}
+
+static inline void __attribute__((constructor)) TC4_init(void){
+  /* TC4 Setup - set registers */
+  TCCR4A = (1<<PWM4A)|(1<<PWM4B);
+
+  #ifdef INVERTED_PWM
+  TCCR4B = (1<<PWM4X)|(1<<PSR4);
+  #else
+  TCCR4B = (0<<PWM4X)|(1<<PSR4);
+  #endif
+
+  TCCR4C = (1<<COM4A0S)|(1<<COM4B0S); // Write to the shadows instead of TCCR4A
+  TCCR4D = (0x01<<WGM40); // Phase and Frequency Correct Mode means halving the frequency calculation/halving the prescaler
+  TCCR4E = 0x00;
+
+  DT4 = 0x00;
+
+  /* Push the prescaler */
+  /* Remember hibiscus.h starts the PLL@96MHz with postcaler 1.5 for 64MHz */
+
+  TCCR4B |= (0x02<<CS40); // PCK/2^(N-1)
+  /* Fast PWM -- 64MHz/4*1024 (03h) = 15.625kHz */ 
+  /* PFCPWM -- 64MHz/2*1024 (02h) = 31.250 kHz (Dual Slope -> 15.625kHz) */ 
+  /* 1024 steps -> 15.625 <=> 768 steps -> 20.833kHz -- IDEAL */
+  
+  TC4_WRITE(OCR4C, 768); // TOP
+  
+  TC4_WRITE(OCR4A, 0);
+  TC4_WRITE(OCR4B, 0);
+
+  DDRC |= (1<<PC6)|(1<<PC7);
+  DDRB |= (1<<PB5)|(1<<PB6);
+  DDRD |= (1<<PD6)|(1<<PD7);
+  
+  /* end TC4 setup*/
   return;
 }
