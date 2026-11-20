@@ -91,13 +91,13 @@ inline void ACM_EPN_init(void){
   UENUM = 2; // Endpoint 2 - Bulk IN - 64B
   SET(UECONX, EPEN);
   UECFG0X = (0x02<<EPTYPE0)|(1<<EPDIR); // IN
-  UECFG1X = (0x03<<EPSIZE0)|(0x00<<EPBK0)|(1<<ALLOC); // Single Banked
+  UECFG1X = (0x03<<EPSIZE0)|(0x01<<EPBK0)|(1<<ALLOC); // Double Banked
   UEIENX = 0x00;
 
   UENUM = 3; // Endpoint 3 - Bulk OUT - 64B
   SET(UECONX, EPEN);
   UECFG0X = (0x02<<EPTYPE0)|(0<<EPDIR); // OUT
-  UECFG1X = (0x03<<EPSIZE0)|(0x00<<EPBK0)|(1<<ALLOC); // Single Banked
+  UECFG1X = (0x03<<EPSIZE0)|(0x01<<EPBK0)|(1<<ALLOC); // Double Banked
   UEIENX = 0x00;
 }
 

@@ -20,7 +20,7 @@ void IMU_read(void){
 
   uint8_t buf[14] = {0};
 
-  if ( !TWI_writebuf(IMU_ADDR, (uint8_t[]){0x3B}, 1, TWI_START, TWI_STOP) ){
+  if ( !TWI_writebuf(IMU_ADDR, (uint8_t[]){0x3B}, 1, TWI_START, TWI_NOSTOP) ){
     while ( !TWI_available() ){}
     TWI_readinto(IMU_ADDR, buf, sizeof(buf), TWI_START, TWI_STOP);
     while ( !TWI_available() ){}
@@ -29,14 +29,18 @@ void IMU_read(void){
     int16_t ay_raw = (int16_t)((buf[2]<<8)|(buf[3]));
     int16_t az_raw = (int16_t)((buf[4]<<8)|(buf[5]));
 
+    /*
     int16_t temp_raw = (int16_t)((buf[6]<<8)|(buf[7]));
     (void)temp_raw;
+    */
+
+    TWI_readinto(IMU_ADDR, buf, sizeof(buf), TWI_START, TWI_STOP);
+    while ( !TWI_available() ){}
 
     int16_t gx_raw = (int16_t)((buf[8]<<8)|(buf[9]));
     int16_t gy_raw = (int16_t)((buf[10]<<8)|(buf[11]));
     int16_t gz_raw = (int16_t)((buf[12]<<8)|(buf[13]));
     
-    /*
     IMU.ax = (((int32_t)ax_raw*1000)>>14);
     IMU.ay = (((int32_t)ay_raw*1000)>>14);
     IMU.az = (((int32_t)az_raw*1000)>>14);
@@ -44,8 +48,8 @@ void IMU_read(void){
     IMU.gx = (((int32_t)gx_raw*100)/131);
     IMU.gy = (((int32_t)gy_raw*100)/131);
     IMU.gz = (((int32_t)gz_raw*100)/131);
-    */
 
+    /*
     IMU.ax = ax_raw;
     IMU.ay = ay_raw;
     IMU.az = az_raw;
@@ -53,6 +57,7 @@ void IMU_read(void){
     IMU.gx = gx_raw;
     IMU.gy = gy_raw;
     IMU.gz = gz_raw;
+    */
   }
 
   return;
