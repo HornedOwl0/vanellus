@@ -20,9 +20,9 @@ Since its origin ***Hibiscus*** remains the most important and longest library f
 
 For more information please refer to:  
 
--The *USB 2.0 Specification*;  
--The *USB CDC* and *USB CDC PSTN* specifications;  
--Atmel 7766 / ATmega16U4/ATmega32U4 Datasheet;  
--SSD1306 Datasheet;  
--MPU-6050 Register Map;  
--VL6180x Register Map;  
+- The *USB 2.0 Specification*;  
+- The *USB CDC* and *USB CDC PSTN* specifications;  
+- Atmel 7766 / ATmega16U4/ATmega32U4 Datasheet;  
+- SSD1306 Datasheet;  
+- MPU-6050 Register Map;  
+- VL6180x Register Map;  
