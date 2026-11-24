@@ -9,7 +9,7 @@ PORT_FLASH_WINDOWS := COM6
 CFLAGS = -std=gnu23 -mmcu=$(MMCU) -Wall -Oz -DF_CPU=$(FREQ)
 CC = avr-gcc
 
-LIB := hibiscus.o hyacinthus.o hydrangea.o hedera.o
+LIB := hibiscus.o hyacinthus.o hydrangea.o hedera.o helianthus.o
 SRC := $(notdir $(wildcard ./src/*/*.c) $(filter-out ./src/main.c,$(wildcard ./src/*.c)))
 
 SRCOBJ := $(patsubst %.c,./obj/%.o,$(SRC))
@@ -25,7 +25,7 @@ obj/%.o: ./lib/%/*.c ./lib/%/*.h
 	echo $(dir $<)
 	$(CC) $(CFLAGS) -o $@ -c $<
 
-obj/%.o: ./src/%/*.c ./src/*.h
+obj/%.o: ./src/%/*.c ./src/%/*.h
 	echo $(dir $<)
 	$(CC) $(CFLAGS) $(INCL) -o $@ -c $<
 

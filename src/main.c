@@ -27,9 +27,13 @@
 #include "imu.h"
 #include "spi.h"
 #include "oled.h"
+#include "lidar.h"
 
 #include "macros.h"
 #include "config.h"
+
+#define TC4_WRITE(reg, val) ({ TC4H=MSB(val); reg=LSB(val); })
+#define TC4_READ(reg, var) ({ var = reg; var |= (uint16_t)(TC4H<<8); })
 
 /* Helianthus */
 struct ADC_mnt ADC_lst[] = {
@@ -45,7 +49,7 @@ static float sum_error = 0.0f;
 
 static float pid_out = 0.0f;
 
-static int8_t weights[] = {-12, +12};
+static int8_t weights[] = {-4, +4};
 
 static float accPitch = 0;
 static float accRoll = 0;
@@ -63,17 +67,13 @@ void try_find_line(void);
 
 void display_task(void);
 void IMU_task(void);
-
-void calc_PID(void);
-void motor_ctrl(void);
+void PID_task(void);
 
 /* Hydrangea -> ptr, interval, offset */
 task_t task_main[] = {
   TASK_DEF(&display_task, 85, 17),
   TASK_DEF(&IMU_task, 135, 43),
-
-  TASK_DEF(&calc_PID, 20, 173),
-  TASK_DEF(&motor_ctrl, 50, 179),
+  TASK_DEF(&PID_task, 20, 173),
 };
 
 int main(void){
@@ -88,7 +88,19 @@ int main(void){
 	sei(); /* End Setup - all interrupts */
 
   /* Pre Loop Setup */
-    
+  
+  IMU_read(); // Take Initial Reading
+
+  while ( !TWI_available() ){ // Await I
+    wdt_reset(); 
+  } 
+
+  OLED_refresh(); // Flush display
+  
+  for (int8_t i=0; i<15; i++) { // Await II
+    wdt_reset(); _delay_ms(100);
+  }
+
   try_find_line(); // You spin me right round baby
 
   /* Task Loop */
@@ -116,23 +128,43 @@ void clr_leds(void){
 }
 
 void try_find_line(void){
-  // Steer Hard Right;
-  
+  // Steer Hard Right (but slow) until find line or timeout;
+  SPI_write(STP);
+
+  TC4_WRITE(OCR4A, ABS(MOTOR_SPD_OFFSET_L + MOTOR_SPD_FORWARD)>>1);
+  TC4_WRITE(OCR4B, ABS(MOTOR_SPD_OFFSET_R + MOTOR_SPD_FORWARD)>>1);
+
   SPI_write(RIGHT_REV);
 
+  gpio_t LED_INDICATOR = {&PIND, &DDRD, &PORTD, PD5};
+  gpio_output(&LED_INDICATOR);
+
+  uint16_t ctd = 512; // Timeout
   for(;;){
-    int16_t ctu = 0; // Count
+    wdt_reset();
+
+    int8_t ctu = 0; // Count
+    
+    if (!ctd)
+      break;
+    
+    if ( (ctd&0x0007) == 0) {
+      gpio_tog(&LED_INDICATOR);
+    }
+
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
       for (int8_t i=0; i<ADC_count; i++){
-        ctu +=  !!(ADC_lst[i].val<SENSOR_THRESHOLD);
+        ctu += !!(ADC_lst[i].val<SENSOR_THRESHOLD);
       }
     }
 
-    _delay_ms(1);
+    _delay_ms(10); ctd--;
+
     if (ctu)
       break;
   }
 
+  gpio_set(&LED_INDICATOR);
 }
 
 /* Task Function Definitions */
@@ -167,6 +199,7 @@ void display_task(void){
   return;
 }
 
+#define FREE_FALL_THRESHOLD ( 200 ) // milli Gs
 void IMU_task(void){
   IMU_read();
 
@@ -176,7 +209,10 @@ void IMU_task(void){
   return;
 }
 
-void calc_PID(void){
+void PID_task(void){
+  if ( (IMU.ax < FREE_FALL_THRESHOLD) && (IMU.ay < FREE_FALL_THRESHOLD) && (IMU.az < FREE_FALL_THRESHOLD) )
+    return;
+
   static char buf[56] = {0};
   char temp_buf[8] = {0};
 
@@ -202,7 +238,7 @@ void calc_PID(void){
   if ( x==x ){
     prev_error = error;
     error = x;
-    sum_error = CLAMP((sum_error+error),-96, +96);
+    sum_error = CLAMP((sum_error+error),-192, +192);
   }
 
   float derivative = error-prev_error;
@@ -216,13 +252,7 @@ void calc_PID(void){
   strcat(buf, (const __memx char*)"\r\n");
   ACM_puts(buf);
 
-  return;
-}
-
-#define TC4_WRITE(reg, val) ({ TC4H=MSB(val); reg=LSB(val); })
-#define TC4_READ(reg, var) ({ var = reg; var |= (uint16_t)(TC4H<<8); })
-
-void motor_ctrl(){
+  /* motor_ctrl_task() */
   int16_t pid_val = (int16_t)pid_out;
 
   lspd = CLAMP(((MOTOR_SPD_OFFSET_L + MOTOR_SPD_FORWARD) - pid_val), -768, 768);
@@ -231,7 +261,10 @@ void motor_ctrl(){
   TC4_WRITE(OCR4A, ABS(lspd));
   TC4_WRITE(OCR4B, ABS(rspd));
   
-  if ( lspd < MOTOR_SPD_DEAD )
+  int16_t distance = LIDAR_get();
+  if (distance > 0 && distance < 50)
+    SPI_write(STP);
+  else if ( lspd < MOTOR_SPD_DEAD )
     SPI_write(LEFT_REV);
   else if ( rspd < MOTOR_SPD_DEAD )
     SPI_write(RIGHT_REV);
@@ -255,7 +288,7 @@ static inline void __attribute__((constructor)) TC4_init(void){
   TCCR4D = (0x01<<WGM40); // Phase and Frequency Correct Mode means halving the frequency calculation/halving the prescaler
   TCCR4E = 0x00;
 
-  DT4 = 0x00;
+  DT4 = 0x00; // No dead Time -> May change this later; 
 
   /* Push the prescaler */
   /* Remember hibiscus.h starts the PLL@96MHz with postcaler 1.5 for 64MHz */
